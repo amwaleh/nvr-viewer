@@ -703,6 +703,29 @@
             transition: color .3s;
         }
         .detection-status.saved { color: #4caf50; }
+
+        /* Events summary */
+        .events-summary {
+            display: flex; flex-direction: column; gap: 10px;
+            padding: 12px; background: #1a1a1a; border-radius: 8px;
+            border: 1px solid #2a2a2a;
+        }
+        .events-summary-total {
+            font-size: 1.1rem; font-weight: 600; color: #ddd;
+        }
+        .events-summary-badges {
+            display: flex; flex-wrap: wrap; gap: 6px;
+        }
+        .event-summary-badge {
+            font-size: .7rem; font-weight: 600; text-transform: uppercase;
+            color: #fff; padding: 3px 8px; border-radius: 4px;
+            letter-spacing: .3px;
+        }
+        .event-summary-badge strong { margin-left: 4px; }
+        .events-gallery-btn {
+            text-align: center; padding: 8px 16px; border-radius: 6px;
+            font-size: .85rem; text-decoration: none;
+        }
     </style>
 </head>
 <body>
@@ -914,24 +937,8 @@
                                 </select>
                             </div>
                         </div>
-                        <div id="events-table-wrap" class="table-wrap">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Time</th>
-                                        <th>Type</th>
-                                        <th>Label</th>
-                                        <th>Confidence</th>
-                                        <th>Camera</th>
-                                        <th>Snapshot</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="events-table-body">
-                                    <tr>
-                                        <td colspan="6" class="empty-inline">Loading events…</td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                        <div id="events-table-wrap">
+                            <div class="empty-inline">Loading events…</div>
                         </div>
                     </section>
                 </div>

@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NVR Events Gallery</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d0d0d; color: #e0e0e0; min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            background: #141414; border-bottom: 1px solid #222;
+            padding: 12px 24px; display: flex; align-items: center; gap: 16px;
+            position: sticky; top: 0; z-index: 100;
+        }
+        .header a { color: #aaa; text-decoration: none; font-size: .85rem; }
+        .header a:hover { color: #fff; }
+        .header h1 { font-size: 1.1rem; font-weight: 600; flex: 1; }
+        .header .stats { font-size: .75rem; color: #888; }
+
+        /* Toolbar */
+        .toolbar {
+            background: #141414; border-bottom: 1px solid #1a1a1a;
+            padding: 10px 24px; display: flex; align-items: center; gap: 12px;
+            flex-wrap: wrap; position: sticky; top: 49px; z-index: 99;
+        }
+        .toolbar select, .toolbar input {
+            background: #1e1e1e; border: 1px solid #333; color: #ccc;
+            border-radius: 6px; padding: 6px 10px; font-size: .8rem;
+        }
+        .toolbar select:focus, .toolbar input:focus { border-color: #555; outline: none; }
+        .toolbar label { font-size: .75rem; color: #888; }
+        .filter-group { display: flex; align-items: center; gap: 6px; }
+        .btn-sm {
+            background: #2a2a2a; border: 1px solid #444; color: #ccc;
+            border-radius: 6px; padding: 6px 12px; font-size: .78rem;
+            cursor: pointer; transition: background .2s;
+        }
+        .btn-sm:hover { background: #3a3a3a; }
+        .btn-sm.active { background: #4caf50; color: #fff; border-color: #4caf50; }
+
+        /* Grid */
+        .events-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 12px; padding: 20px 24px;
+        }
+        .event-card {
+            background: #1a1a1a; border: 1px solid #252525;
+            border-radius: 10px; overflow: hidden; cursor: pointer;
+            transition: border-color .2s, transform .15s, box-shadow .2s;
+        }
+        .event-card:hover {
+            border-color: #555; transform: translateY(-3px);
+            box-shadow: 0 8px 24px rgba(0,0,0,.4);
+        }
+        .event-thumb {
+            position: relative; width: 100%; aspect-ratio: 16/9;
+            background: #111; overflow: hidden;
+        }
+        .event-thumb img {
+            width: 100%; height: 100%; object-fit: cover; display: block;
+            transition: transform .3s;
+        }
+        .event-card:hover .event-thumb img { transform: scale(1.05); }
+        .event-thumb-placeholder {
+            width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            color: #444; font-size: .8rem;
+        }
+        .event-play-icon {
+            position: absolute; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; transition: opacity .2s;
+        }
+        .event-card:hover .event-play-icon { opacity: 1; }
+        .event-play-icon::after {
+            content: '▶'; background: rgba(0,0,0,.75); color: #fff;
+            border-radius: 50%; width: 40px; height: 40px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.5);
+        }
+        .event-type-badge {
+            position: absolute; top: 8px; left: 8px;
+            font-size: .65rem; font-weight: 700; text-transform: uppercase;
+            color: #fff; padding: 2px 8px; border-radius: 4px;
+            letter-spacing: .4px; backdrop-filter: blur(4px);
+        }
+        .event-info {
+            padding: 10px 12px; display: flex; flex-direction: column; gap: 3px;
+        }
+        .event-label {
+            font-size: .82rem; font-weight: 600; color: #ddd;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .event-meta {
+            font-size: .7rem; color: #888;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .event-time { font-size: .68rem; color: #666; }
+
+        /* Loading & empty */
+        .loading {
+            display: flex; align-items: center; justify-content: center;
+            gap: 12px; padding: 60px; color: #666;
+        }
+        .spinner {
+            width: 20px; height: 20px; border: 2px solid #333;
+            border-top-color: #888; border-radius: 50%;
+            animation: spin .8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .empty { text-align: center; padding: 60px; color: #555; font-size: .9rem; }
+        .load-more {
+            display: flex; justify-content: center; padding: 20px;
+        }
+
+        /* Lightbox */
+        .lightbox {
+            display: none; position: fixed; inset: 0; z-index: 9999;
+            background: rgba(0,0,0,.92); align-items: center; justify-content: center;
+            cursor: zoom-out; flex-direction: column; gap: 12px;
+        }
+        .lightbox.open { display: flex; }
+        .lightbox img, .lightbox video {
+            max-width: 94vw; max-height: 85vh; border-radius: 8px;
+            box-shadow: 0 4px 32px rgba(0,0,0,.6); object-fit: contain;
+        }
+        .lightbox-caption {
+            color: #bbb; font-size: .85rem; text-align: center; max-width: 90vw;
+        }
+        .lightbox-close {
+            position: absolute; top: 16px; right: 24px;
+            color: #fff; font-size: 36px; cursor: pointer; line-height: 1;
+            opacity: .7; transition: opacity .2s;
+        }
+        .lightbox-close:hover { opacity: 1; }
+        .lightbox-nav {
+            position: absolute; top: 50%; transform: translateY(-50%);
+            color: #fff; font-size: 48px; cursor: pointer; padding: 0 16px;
+            opacity: .5; transition: opacity .2s; user-select: none;
+        }
+        .lightbox-nav:hover { opacity: 1; }
+        .lightbox-nav.prev { left: 0; }
+        .lightbox-nav.next { right: 0; }
+
+        /* Pagination */
+        .pagination {
+            display: flex; align-items: center; justify-content: center;
+            gap: 6px; padding: 20px 24px; flex-wrap: wrap;
+        }
+        .page-btn {
+            background: #1e1e1e; border: 1px solid #333; color: #ccc;
+            border-radius: 6px; padding: 6px 12px; font-size: .78rem;
+            cursor: pointer; transition: background .2s, border-color .2s;
+            min-width: 36px; text-align: center;
+        }
+        .page-btn:hover { background: #2a2a2a; border-color: #555; }
+        .page-btn.active { background: #4caf50; color: #fff; border-color: #4caf50; cursor: default; }
+        .page-btn:disabled { opacity: .4; cursor: not-allowed; }
+        .page-info { font-size: .75rem; color: #666; padding: 0 8px; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <a href="/">← Back to NVR</a>
+        <h1>📸 Events Gallery</h1>
+        <span class="stats" id="event-count"></span>
+    </header>
+
+    <div class="toolbar">
+        <div class="filter-group">
+            <label>Type:</label>
+            <select id="filter-type">
+                <option value="">All</option>
+                <option value="motion">Motion</option>
+                <option value="person">Person</option>
+                <option value="vehicle">Vehicle</option>
+                <option value="face">Face</option>
+                <option value="animal">Animal</option>
+                <option value="object">Object</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Camera:</label>
+            <select id="filter-camera">
+                <option value="">All cameras</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Per page:</label>
+            <select id="filter-limit">
+                <option value="24" selected>24</option>
+                <option value="48">48</option>
+                <option value="96">96</option>
+            </select>
+        </div>
+        <button class="btn-sm" id="btn-refresh" onclick="loadEvents()">↻ Refresh</button>
+    </div>
+
+    <div id="events-container">
+        <div class="loading"><div class="spinner"></div> Loading events…</div>
+    </div>
+
+    <!-- Lightbox -->
+    <div class="lightbox" id="lightbox" onclick="if(event.target===this)closeLightbox()">
+        <img id="lb-img" src="" alt="" style="display:none;">
+        <video id="lb-video" src="" controls style="display:none;"></video>
+        <div class="lightbox-caption" id="lb-caption"></div>
+        <div class="lightbox-close" onclick="closeLightbox()">&times;</div>
+        <div class="lightbox-nav prev" onclick="navLightbox(-1)">‹</div>
+        <div class="lightbox-nav next" onclick="navLightbox(1)">›</div>
+    </div>
+
+    <script>
+    const escape = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const typeColors = { motion:'#f39c12', person:'#2ecc71', vehicle:'#3498db', face:'#e74c3c', animal:'#9b59b6', object:'#1abc9c' };
+
+    let allEvents = [];
+    let cameras = [];
+    let currentIndex = -1;
+    let currentPage = 1;
+    let totalEvents = 0;
+    let perPage = 24;
+
+    function getPerPage() {
+        return parseInt(document.getElementById('filter-limit').value) || 24;
+    }
+
+    async function loadCameras() {
+        try {
+            cameras = await (await fetch('/api/cameras')).json();
+            const sel = document.getElementById('filter-camera');
+            cameras.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.id; opt.textContent = c.name || c.host;
+                sel.appendChild(opt);
+            });
+        } catch(e) { console.error('Failed to load cameras', e); }
+    }
+
+    async function loadEvents(page) {
+        if (page !== undefined) currentPage = page;
+        perPage = getPerPage();
+        const offset = (currentPage - 1) * perPage;
+
+        const container = document.getElementById('events-container');
+        container.innerHTML = '<div class="loading"><div class="spinner"></div> Loading events…</div>';
+
+        const type = document.getElementById('filter-type').value;
+        const cameraId = document.getElementById('filter-camera').value;
+
+        let url = `/api/events?limit=${perPage}&offset=${offset}`;
+        if (type) url += `&detection_type=${encodeURIComponent(type)}`;
+        if (cameraId) url += `&camera_id=${cameraId}`;
+
+        try {
+            const resp = await (await fetch(url)).json();
+            allEvents = resp.events || resp;
+            totalEvents = resp.total || allEvents.length;
+            renderGrid();
+        } catch(e) {
+            container.innerHTML = `<div class="empty">Failed to load events: ${e.message}</div>`;
+        }
+    }
+
+    function getCameraName(id) {
+        const c = cameras.find(x => x.id === id);
+        return c ? (c.name || c.host) : `Cam ${id}`;
+    }
+
+    function renderGrid() {
+        const container = document.getElementById('events-container');
+        const totalPages = Math.ceil(totalEvents / perPage) || 1;
+        const start = (currentPage - 1) * perPage + 1;
+        const end = Math.min(currentPage * perPage, totalEvents);
+        document.getElementById('event-count').textContent = `${start}–${end} of ${totalEvents} events`;
+
+        if (!allEvents.length) {
+            container.innerHTML = '<div class="empty">No events found matching your filters.</div>';
+            return;
+        }
+
+        const grid = `<div class="events-grid">${allEvents.map((ev, i) => {
+            const conf = Number(ev.confidence ?? 0);
+            const pct = conf <= 1 ? conf * 100 : conf;
+            const color = typeColors[ev.detection_type] || '#888';
+            const hasClip = !!ev.clip_url;
+            const thumb = ev.snapshot_url || '';
+            const ts = ev.timestamp ? new Date(ev.timestamp.replace(' ','T')).toLocaleString() : '';
+
+            return `
+            <div class="event-card" onclick="openLightbox(${i})" data-index="${i}">
+                <div class="event-thumb">
+                    ${thumb ? `<img src="${escape(thumb)}" loading="lazy" alt="">` : '<div class="event-thumb-placeholder">No preview</div>'}
+                    ${hasClip ? '<div class="event-play-icon"></div>' : ''}
+                    <span class="event-type-badge" style="background:${color}">${escape(ev.detection_type)}</span>
+                </div>
+                <div class="event-info">
+                    <span class="event-label">${escape(ev.label || ev.detection_type)}</span>
+                    <span class="event-meta">${escape(getCameraName(ev.camera_id))} · ${pct.toFixed(0)}%</span>
+                    <span class="event-time">${escape(ts)}</span>
+                </div>
+            </div>`;
+        }).join('')}</div>`;
+
+        const paginationHtml = renderPagination(totalPages);
+        container.innerHTML = grid + paginationHtml;
+    }
+
+    function renderPagination(totalPages) {
+        if (totalPages <= 1) return '';
+
+        let buttons = '';
+        // Prev
+        buttons += `<button class="page-btn" onclick="loadEvents(${currentPage - 1})" ${currentPage <= 1 ? 'disabled' : ''}>‹ Prev</button>`;
+
+        // Page numbers (show max 7 around current)
+        const range = getPageRange(currentPage, totalPages, 7);
+        if (range[0] > 1) {
+            buttons += `<button class="page-btn" onclick="loadEvents(1)">1</button>`;
+            if (range[0] > 2) buttons += `<span class="page-info">…</span>`;
+        }
+        for (const p of range) {
+            buttons += `<button class="page-btn${p === currentPage ? ' active' : ''}" onclick="loadEvents(${p})">${p}</button>`;
+        }
+        if (range[range.length - 1] < totalPages) {
+            if (range[range.length - 1] < totalPages - 1) buttons += `<span class="page-info">…</span>`;
+            buttons += `<button class="page-btn" onclick="loadEvents(${totalPages})">${totalPages}</button>`;
+        }
+
+        // Next
+        buttons += `<button class="page-btn" onclick="loadEvents(${currentPage + 1})" ${currentPage >= totalPages ? 'disabled' : ''}>Next ›</button>`;
+
+        return `<div class="pagination">${buttons}</div>`;
+    }
+
+    function getPageRange(current, total, maxVisible) {
+        const half = Math.floor(maxVisible / 2);
+        let start = Math.max(1, current - half);
+        let end = Math.min(total, start + maxVisible - 1);
+        start = Math.max(1, end - maxVisible + 1);
+        const pages = [];
+        for (let i = start; i <= end; i++) pages.push(i);
+        return pages;
+    }
+
+    function openLightbox(index) {
+        currentIndex = index;
+        const ev = allEvents[index];
+        if (!ev) return;
+
+        const img = document.getElementById('lb-img');
+        const vid = document.getElementById('lb-video');
+        const caption = document.getElementById('lb-caption');
+
+        const ts = ev.timestamp ? new Date(ev.timestamp.replace(' ','T')).toLocaleString() : '';
+        caption.textContent = `${ev.detection_type} — ${ev.label || ''} · ${getCameraName(ev.camera_id)} · ${ts}`;
+
+        if (ev.clip_url) {
+            img.style.display = 'none'; img.src = '';
+            vid.src = ev.clip_url; vid.style.display = 'block'; vid.play();
+        } else if (ev.snapshot_url) {
+            vid.style.display = 'none'; vid.pause(); vid.src = '';
+            img.src = ev.snapshot_url; img.style.display = 'block';
+        }
+
+        document.getElementById('lightbox').classList.add('open');
+    }
+
+    function closeLightbox() {
+        const vid = document.getElementById('lb-video');
+        vid.pause(); vid.src = '';
+        document.getElementById('lb-img').src = '';
+        document.getElementById('lightbox').classList.remove('open');
+        currentIndex = -1;
+    }
+
+    function navLightbox(dir) {
+        if (currentIndex < 0) return;
+        let next = currentIndex + dir;
+        if (next < 0) next = allEvents.length - 1;
+        if (next >= allEvents.length) next = 0;
+        openLightbox(next);
+    }
+
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+        if (!document.getElementById('lightbox').classList.contains('open')) return;
+        if (e.key === 'Escape') closeLightbox();
+        else if (e.key === 'ArrowLeft') navLightbox(-1);
+        else if (e.key === 'ArrowRight') navLightbox(1);
+    });
+
+    // Filter listeners — reset to page 1 on filter change
+    ['filter-type', 'filter-camera', 'filter-limit'].forEach(id => {
+        document.getElementById(id).addEventListener('change', () => loadEvents(1));
+    });
+
+    // Init
+    loadCameras().then(() => loadEvents(1));
+    </script>
+</body>
+</html>

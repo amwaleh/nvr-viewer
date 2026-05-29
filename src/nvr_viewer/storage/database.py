@@ -153,7 +153,7 @@ class Database:
         return cur.lastrowid
     
     def get_events(self, camera_id: int = None, detection_type: str = None,
-                   since: str = None, limit: int = 100) -> list[dict]:
+                   since: str = None, limit: int = 100, offset: int = 0) -> list[dict]:
         query = "SELECT * FROM detection_events WHERE 1=1"
         params = []
         if camera_id:
@@ -165,10 +165,25 @@ class Database:
         if since:
             query += " AND timestamp >= ?"
             params.append(since)
-        query += " ORDER BY timestamp DESC LIMIT ?"
-        params.append(limit)
+        query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
         rows = self._conn.execute(query, params).fetchall()
         return [dict(r) for r in rows]
+
+    def count_events(self, camera_id: int = None, detection_type: str = None,
+                     since: str = None) -> int:
+        query = "SELECT COUNT(*) FROM detection_events WHERE 1=1"
+        params = []
+        if camera_id:
+            query += " AND camera_id = ?"
+            params.append(camera_id)
+        if detection_type:
+            query += " AND detection_type = ?"
+            params.append(detection_type)
+        if since:
+            query += " AND timestamp >= ?"
+            params.append(since)
+        return self._conn.execute(query, params).fetchone()[0]
     
     # Recordings
     def log_recording(self, camera_id: int, file_path: str, trigger: str = "manual") -> int:

@@ -242,7 +242,8 @@ class NVRApp {
         const query = selectedType ? `?detection_type=${encodeURIComponent(selectedType)}` : '';
 
         try {
-            const events = await this.api('GET', `/api/events${query}`);
+            const resp = await this.api('GET', `/api/events${query}`);
+            const events = resp.events || resp;
             this.events = events;
             this.renderEvents(events);
             this.updateRefreshTime();
@@ -418,41 +419,30 @@ class NVRApp {
     }
 
     renderEvents(events) {
-        const tbody = document.getElementById('events-table-body');
-        if (!tbody) return;
+        const container = document.getElementById('events-table-wrap');
+        if (!container) return;
 
         if (!events.length) {
-            tbody.innerHTML = '<tr><td colspan="6" class="empty-inline">No events match the current filter.</td></tr>';
+            container.innerHTML = '<div class="empty-inline">No events match the current filter.</div>';
             return;
         }
 
-        tbody.innerHTML = events.map((event) => {
-            const camera = this.cameras.find((item) => item.id === event.camera_id);
-            const confidence = Number(event.confidence ?? 0);
-            const confidencePct = confidence <= 1 ? confidence * 100 : confidence;
-            const captionText = `${event.detection_type} - ${event.label || ''} (${this.formatTime(event.timestamp)})`.replace(/'/g, "\\'");
+        // Show summary counts by type with a link to the gallery
+        const typeCounts = {};
+        events.forEach(e => { typeCounts[e.detection_type] = (typeCounts[e.detection_type] || 0) + 1; });
+        const typeColors = { motion: '#f39c12', person: '#2ecc71', vehicle: '#3498db', face: '#e74c3c', animal: '#9b59b6', object: '#1abc9c' };
 
-            let mediaCell = '—';
-            if (event.clip_url) {
-                mediaCell = `<div style="position:relative;display:inline-block;cursor:pointer" onclick="window._openClip('${escapeHtml(event.clip_url)}','${captionText}')">
-                    <img src="${escapeHtml(event.snapshot_url || '')}" style="max-width:80px;max-height:60px;border-radius:4px;" loading="lazy">
-                    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"><span style="background:rgba(0,0,0,.6);color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:14px;">&#9654;</span></div>
-                </div>`;
-            } else if (event.snapshot_url) {
-                mediaCell = `<img src="${escapeHtml(event.snapshot_url)}" style="max-width:80px;max-height:60px;border-radius:4px;cursor:pointer;" loading="lazy" onclick="window._openSnapshot(this.src,'${captionText}')">`;
-            }
-
-            return `
-                <tr>
-                    <td>${escapeHtml(this.formatTime(event.timestamp))}</td>
-                    <td>${escapeHtml(event.detection_type)}</td>
-                    <td>${escapeHtml(event.label || '—')}</td>
-                    <td>${Number.isFinite(confidencePct) ? `${confidencePct.toFixed(1)}%` : '—'}</td>
-                    <td>${escapeHtml(camera?.name || event.camera_id || 'Unknown')}</td>
-                    <td>${mediaCell}</td>
-                </tr>
-            `;
+        const badges = Object.entries(typeCounts).map(([type, count]) => {
+            const color = typeColors[type] || '#888';
+            return `<span class="event-summary-badge" style="background:${color}">${escapeHtml(type)} <strong>${count}</strong></span>`;
         }).join('');
+
+        container.innerHTML = `
+            <div class="events-summary">
+                <div class="events-summary-total">${events.length} recent events</div>
+                <div class="events-summary-badges">${badges}</div>
+                <a href="/events" target="_blank" class="btn-primary events-gallery-btn">View Events Gallery ↗</a>
+            </div>`;
     }
 
     renderStatus(status) {

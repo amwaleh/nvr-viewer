@@ -18,7 +18,7 @@ MODELS_DIR = Path.home() / ".nvr-viewer" / "models"
 class ObjectDetector:
     """YOLO-based object detection with category filtering."""
     
-    def __init__(self, model_name: str = "yolov8n.pt", confidence: float = 0.4, device: str = "cpu"):
+    def __init__(self, model_name: str = "yolov8s.pt", confidence: float = 0.4, device: str = "cpu"):
         self.confidence = confidence
         self.device = device
         self._model = None
@@ -102,31 +102,55 @@ class ObjectDetector:
 
 
 class FaceDetector:
-    """Face detection using OpenCV's DNN face detector (built-in, no extra models)."""
-    
+    """Face detection using OpenCV's YuNet (accurate, fast, built-in API)."""
+
+    YUNET_URL = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+    YUNET_FILE = "face_detection_yunet_2023mar.onnx"
+
     def __init__(self, confidence: float = 0.5):
         self.confidence = confidence
         self._detector = None
-    
+        self._use_cascade = False
+
     def _ensure_detector(self):
         if self._detector is not None:
             return
-        # Use OpenCV's built-in Yunet face detector
-        try:
-            self._detector = cv2.FaceDetectorYN.create(
-                "",  # Will use built-in model
-                "",
-                (320, 320),
-                self.confidence
-            )
-        except Exception:
-            # Fallback to Haar cascade
-            cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-            self._detector = cv2.CascadeClassifier(cascade_path)
-            self._use_cascade = True
-            logger.info("Using Haar cascade face detector (fallback)")
-            return
-        self._use_cascade = False
+
+        model_path = MODELS_DIR / self.YUNET_FILE
+        MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Download YuNet ONNX model if missing
+        if not model_path.exists():
+            try:
+                import urllib.request
+                logger.info(f"Downloading YuNet face model to {model_path}...")
+                urllib.request.urlretrieve(self.YUNET_URL, str(model_path))
+                logger.info("YuNet model downloaded successfully")
+            except Exception as e:
+                logger.warning(f"Failed to download YuNet model: {e}")
+
+        # Try YuNet first
+        if model_path.exists():
+            try:
+                self._detector = cv2.FaceDetectorYN.create(
+                    str(model_path),
+                    "",
+                    (320, 320),
+                    self.confidence,
+                    0.3,  # NMS threshold
+                    5000  # top_k
+                )
+                self._use_cascade = False
+                logger.info("Using YuNet face detector (accurate)")
+                return
+            except Exception as e:
+                logger.warning(f"YuNet init failed: {e}")
+
+        # Fallback to Haar cascade
+        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        self._detector = cv2.CascadeClassifier(cascade_path)
+        self._use_cascade = True
+        logger.info("Using Haar cascade face detector (fallback)")
     
     def detect(self, frame: np.ndarray) -> list[dict]:
         """Detect faces in frame.

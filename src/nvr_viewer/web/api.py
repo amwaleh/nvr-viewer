@@ -344,6 +344,15 @@ async def index():
     return {"message": "NVR Viewer API", "docs": "/docs"}
 
 
+@app.get("/events")
+async def events_page():
+    """Serve the events gallery page."""
+    events_path = TEMPLATES_DIR / "events.html"
+    if events_path.exists():
+        return FileResponse(events_path, media_type="text/html")
+    raise HTTPException(404, "Events page not found")
+
+
 # Mount static files after defining routes
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -696,10 +705,13 @@ async def list_events(
     detection_type: Optional[str] = None,
     since: Optional[str] = None,
     limit: int = 100,
+    offset: int = 0,
 ):
-    """Query detection events."""
+    """Query detection events with pagination."""
     events = db.get_events(camera_id=camera_id, detection_type=detection_type,
-                           since=since, limit=limit)
+                           since=since, limit=limit, offset=offset)
+    total = db.count_events(camera_id=camera_id, detection_type=detection_type,
+                            since=since)
     # Add web-accessible snapshot and clip URLs
     for ev in events:
         sp = ev.get("snapshot_path")
@@ -708,7 +720,7 @@ async def list_events(
         meta = ev.get("metadata", "")
         if meta and meta.endswith(".mp4"):
             ev["clip_url"] = f"/api/clips/{Path(meta).name}"
-    return events
+    return {"events": events, "total": total, "limit": limit, "offset": offset}
 
 
 @app.get("/api/snapshots/{filename}")
