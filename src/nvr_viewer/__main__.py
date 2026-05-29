@@ -155,6 +155,12 @@ def cmd_events(args):
     db.close()
 
 
+def cmd_web(args):
+    """Start the web UI and API server."""
+    from .web.server import run
+    run(host=args.host, port=args.port, reload=args.reload)
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="nvr-viewer",
@@ -201,6 +207,13 @@ def main():
     p_events.add_argument("--type", help="Filter by detection type")
     p_events.add_argument("--limit", type=int, default=50, help="Max results")
     p_events.set_defaults(func=cmd_events)
+
+    # web server
+    p_web = sub.add_parser("web", help="Start web UI and API server")
+    p_web.add_argument("--host", default="0.0.0.0", help="Bind host")
+    p_web.add_argument("--port", type=int, default=8080, help="Bind port")
+    p_web.add_argument("--reload", action="store_true", help="Auto-reload on changes")
+    p_web.set_defaults(func=cmd_web)
 
     args = parser.parse_args()
     setup_logging(args.verbose)
