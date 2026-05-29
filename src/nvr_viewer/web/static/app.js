@@ -332,8 +332,8 @@ class NVRApp {
                     <div class="action-row">
                         <button class="btn" type="button" data-action="connect-camera" data-id="${camera.id}" data-role="connect-button" ${enabled ? 'disabled' : ''}>Connect</button>
                         <button class="btn-secondary" type="button" data-action="disconnect-camera" data-id="${camera.id}" data-role="disconnect-button" ${enabled ? '' : 'disabled'}>Disconnect</button>
-                        <button class="btn-secondary" type="button" data-action="edit-camera" data-id="${camera.id}" title="Edit">&#9998;</button>
-                        <button class="btn-secondary" type="button" data-action="delete-camera" data-id="${camera.id}" title="Delete" style="color:#e74c3c;">&#128465;</button>
+                        <button class="btn-secondary" type="button" data-action="edit-camera" data-id="${camera.id}" title="Edit">Edit</button>
+                        <button class="btn-secondary" type="button" data-action="delete-camera" data-id="${camera.id}" title="Delete" style="color:#e74c3c;">Delete</button>
                     </div>
                 </div>
             `;
