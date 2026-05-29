@@ -672,6 +672,37 @@
                 flex-direction: column;
             }
         }
+
+        /* Detection toggle cards */
+        .detection-toggles {
+            display: flex; gap: .6rem; flex-wrap: wrap;
+        }
+        .toggle-card {
+            display: flex; align-items: center; gap: .6rem;
+            background: #1e1e1e; border: 1px solid #333; border-radius: 8px;
+            padding: .6rem .9rem; cursor: pointer; flex: 1 1 140px;
+            transition: border-color .2s, background .2s; position: relative;
+        }
+        .toggle-card:hover { border-color: #555; background: #252525; }
+        .toggle-card input[type="checkbox"] {
+            width: 18px; height: 18px; accent-color: #4caf50;
+            cursor: pointer; flex-shrink: 0;
+        }
+        .toggle-card input[type="checkbox"]:checked ~ .toggle-label { color: #4caf50; }
+        .toggle-card input[type="checkbox"]:checked ~ .toggle-icon { opacity: 1; }
+        .toggle-icon { font-size: 1.3rem; opacity: .4; transition: opacity .2s; flex-shrink: 0; }
+        .toggle-label { font-weight: 600; font-size: .85rem; color: #999; transition: color .2s; }
+        .toggle-desc { display: none; }
+        @media (min-width: 600px) {
+            .toggle-card { flex-direction: column; align-items: flex-start; gap: .3rem; }
+            .toggle-card input[type="checkbox"] { position: absolute; top: .6rem; right: .6rem; }
+            .toggle-desc { display: block; font-size: .7rem; color: #666; line-height: 1.3; }
+        }
+        .detection-status {
+            font-size: .75rem; color: #888; min-height: 1.1rem;
+            transition: color .3s;
+        }
+        .detection-status.saved { color: #4caf50; }
     </style>
 </head>
 <body>
@@ -752,32 +783,45 @@
                         <div class="stack">
                             <div>
                                 <h3>Add Camera</h3>
-                                <p class="panel-subtitle">Store an RTSP endpoint and optional credentials.</p>
+                                <p class="panel-subtitle">Add an RTSP or MJPEG camera endpoint.</p>
                             </div>
                             <form id="add-camera-form" class="form-grid">
+                                <div class="form-group">
+                                    <label for="camera-type">Type</label>
+                                    <select id="camera-type" name="type">
+                                        <option value="rtsp">RTSP</option>
+                                        <option value="mjpeg">MJPEG (HTTP)</option>
+                                    </select>
+                                </div>
                                 <div class="form-group">
                                     <label for="camera-name">Name</label>
                                     <input id="camera-name" name="name" type="text" placeholder="Front Gate" required>
                                 </div>
-                                <div class="form-group">
+                                <!-- RTSP fields -->
+                                <div class="form-group rtsp-field">
                                     <label for="camera-host">Host</label>
                                     <input id="camera-host" name="host" type="text" placeholder="192.168.1.50" required>
                                 </div>
-                                <div class="form-group">
+                                <div class="form-group rtsp-field">
                                     <label for="camera-port">Port</label>
                                     <input id="camera-port" name="port" type="number" min="1" max="65535" value="554" required>
                                 </div>
-                                <div class="form-group">
+                                <div class="form-group rtsp-field">
                                     <label for="camera-path">RTSP Path</label>
                                     <input id="camera-path" name="path" type="text" value="/onvif1" required>
                                 </div>
-                                <div class="form-group">
+                                <div class="form-group rtsp-field">
                                     <label for="camera-username">Username</label>
                                     <input id="camera-username" name="username" type="text" value="admin">
                                 </div>
-                                <div class="form-group">
+                                <div class="form-group rtsp-field">
                                     <label for="camera-password">Password</label>
                                     <input id="camera-password" name="password" type="password" placeholder="Optional">
+                                </div>
+                                <!-- MJPEG fields -->
+                                <div class="form-group mjpeg-field full-width" style="display:none;">
+                                    <label for="camera-stream-url">Stream URL</label>
+                                    <input id="camera-stream-url" name="stream_url" type="url" placeholder="http://192.168.1.22:8081/0/stream">
                                 </div>
                                 <div class="form-group full-width">
                                     <button class="btn" type="submit">Add Camera</button>
@@ -819,6 +863,38 @@
                     </section>
 
                     <section class="tab-panel" id="tab-events">
+                        <!-- Detection Settings -->
+                        <div class="stack" style="margin-bottom:1.2rem;">
+                            <div class="section-header">
+                                <div>
+                                    <h3>Detection Settings</h3>
+                                    <p class="panel-subtitle">Choose which detection types are active.</p>
+                                </div>
+                            </div>
+                            <div id="detection-toggles" class="detection-toggles">
+                                <label class="toggle-card">
+                                    <input type="checkbox" id="det-motion" checked>
+                                    <span class="toggle-icon">🏃</span>
+                                    <span class="toggle-label">Motion</span>
+                                    <span class="toggle-desc">Background subtraction — detects any movement</span>
+                                </label>
+                                <label class="toggle-card">
+                                    <input type="checkbox" id="det-objects">
+                                    <span class="toggle-icon">🚗</span>
+                                    <span class="toggle-label">Objects</span>
+                                    <span class="toggle-desc">YOLOv8 — people, vehicles, animals, etc.</span>
+                                </label>
+                                <label class="toggle-card">
+                                    <input type="checkbox" id="det-faces">
+                                    <span class="toggle-icon">😶</span>
+                                    <span class="toggle-label">Faces</span>
+                                    <span class="toggle-desc">Haar cascade — detects human faces</span>
+                                </label>
+                            </div>
+                            <div id="detection-status" class="detection-status"></div>
+                        </div>
+                        <hr style="border-color:#333;margin:0 0 1rem 0;">
+                        <!-- Events List -->
                         <div class="stack">
                             <div class="section-header">
                                 <div>

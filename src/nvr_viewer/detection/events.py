@@ -125,11 +125,12 @@ class EventProcessor:
         self._clip_recorders: dict[int, ClipRecorder] = {}
 
     def buffer_frame(self, camera_id: int, frame: np.ndarray):
-        """Add frame to rolling pre-event buffer (call on every frame)."""
+        """Add frame to rolling pre-event buffer (call on every Nth frame)."""
         max_frames = int(self.pre_buffer_seconds * self.fps)
         if camera_id not in self._frame_buffers:
             self._frame_buffers[camera_id] = deque(maxlen=max_frames)
-        self._frame_buffers[camera_id].append(frame.copy())
+        # Store reference, only copy when clip starts
+        self._frame_buffers[camera_id].append(frame)
 
         # Feed active clip recorder
         rec = self._clip_recorders.get(camera_id)

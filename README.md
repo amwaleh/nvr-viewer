@@ -4,7 +4,8 @@ Network Video Recorder with camera auto-detection, recording, and AI-powered det
 
 ## Features
 
-- **Camera Auto-Detection** — Scans your network for RTSP cameras (port 554), probes common paths, works with Yoosee/HIipCamera and standard ONVIF cameras
+- **Camera Auto-Detection** — Scans your network for RTSP and MJPEG cameras, probes common paths, works with Yoosee/HIipCamera, Motion, and standard ONVIF cameras
+- **MJPEG Support** — Connect HTTP MJPEG cameras (Motion, IP Webcam, etc.) alongside RTSP cameras
 - **Live Viewing** — Multi-camera live view with OpenCV GUI
 - **Recording** — Record streams directly to MP4 files (manual or motion-triggered)
 - **SD Card Access** — List and download recordings from camera SD cards
@@ -68,16 +69,20 @@ src/nvr_viewer/
 │   ├── decoder.py      # H264 decoding via PyAV
 │   └── recorder.py     # MP4 stream recording
 ├── network/
-│   ├── scanner.py      # Network camera auto-detection
+│   ├── scanner.py      # Network camera auto-detection (RTSP + MJPEG)
 │   └── sdcard.py       # SD card file access
 ├── detection/
-│   ├── motion.py       # Motion detection (MOG2)
+│   ├── motion.py       # Motion detection (MOG2, downscaled)
 │   ├── detector.py     # YOLO object + face detection
-│   └── events.py       # Event processing and deduplication
+│   └── events.py       # Event processing, clip recording, deduplication
 ├── storage/
 │   ├── database.py     # SQLite database
 │   ├── credentials.py  # Encrypted credential store
 │   └── models.py       # Data models
+├── web/
+│   ├── api.py          # FastAPI backend (streaming, detection, camera CRUD)
+│   ├── static/app.js   # Frontend SPA JavaScript
+│   └── templates/      # HTML templates
 └── ui/
     └── viewer.py       # OpenCV multi-camera display
 ```
@@ -91,10 +96,121 @@ src/nvr_viewer/
 
 **Tested:**
 - Yoosee / Jortan cameras (RTSP server: `RtspServer_0.0.0.2`)
+- Motion (Linux MJPEG camera server)
 
 **Should work with:**
 - Any camera with RTSP on port 554
 - ONVIF-compatible cameras
+- Any HTTP MJPEG stream source (IP Webcam, Motion, etc.)
+
+---
+
+## Connecting Cameras
+
+### 1. Linux — Motion (Webcam / USB Camera)
+
+[Motion](https://motion-project.github.io/) turns any USB or built-in camera into a network MJPEG stream.
+
+#### Install
+
+```bash
+# Debian / Ubuntu
+sudo apt update && sudo apt install -y motion
+
+# Fedora
+sudo dnf install motion
+```
+
+#### Configure
+
+Edit `/etc/motion/motion.conf` (or `~/.motion/motion.conf`):
+
+```ini
+# Stream settings
+stream_port 8081
+stream_localhost off
+stream_maxrate 15
+stream_quality 75
+
+# Web control (optional)
+webcontrol_port 8080
+webcontrol_localhost off
+
+# Video device
+videodevice /dev/video0
+width 1280
+height 720
+framerate 15
+
+# Disable file output (NVR handles recording)
+output_pictures off
+ffmpeg_output_movies off
+```
+
+#### Start
+
+```bash
+# Foreground (testing)
+motion
+
+# As a service
+sudo systemctl enable --now motion
+```
+
+#### Add to NVR Viewer
+
+The camera will be auto-discovered when you click **Scan Network** in the web UI. It will show up with an orange **MJPEG** badge.
+
+To add manually, go to **Cameras → Add Camera**, select **MJPEG (HTTP)** type, and enter:
+
+```
+Stream URL: http://<LINUX_IP>:8081/0/stream
+```
+
+---
+
+### 2. Android — IP Webcam App
+
+[IP Webcam](https://play.google.com/store/apps/details?id=com.pas.webcam) turns your Android phone into a network camera with MJPEG and RTSP streams.
+
+#### Setup
+
+1. Install **IP Webcam** from Google Play Store
+2. Open the app → scroll to the bottom → tap **Start server**
+3. Note the IP address shown (e.g., `http://192.168.1.100:8080`)
+
+#### Recommended Settings
+
+| Setting | Value |
+|---------|-------|
+| Video resolution | 1280×720 |
+| Video quality | 60–80% |
+| Orientation | Landscape |
+| Audio mode | Disabled (saves bandwidth) |
+
+#### Add to NVR Viewer
+
+**Option A — MJPEG (simpler, auto-detected by scan):**
+
+Select **MJPEG (HTTP)** type in Add Camera:
+
+```
+Stream URL: http://<PHONE_IP>:8080/video
+```
+
+**Option B — RTSP (lower latency):**
+
+Select **RTSP** type in Add Camera:
+
+```
+Host: <PHONE_IP>
+Port: 8080
+Path: /h264_ulaw.sdp
+```
+
+> **Tip:** Enable "Prevent display from dimming" in IP Webcam settings for continuous use. Connect the phone to a charger.
+
+---
 
 ## Data Storage
 

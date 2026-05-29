@@ -5,6 +5,7 @@ import numpy as np
 import logging
 import time
 import threading
+import urllib.request
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Query
@@ -76,6 +77,8 @@ class CameraAdd(BaseModel):
     path: str = "/onvif1"
     username: str = "admin"
     password: str = ""
+    type: str = "rtsp"  # "rtsp" or "mjpeg"
+    stream_url: str = ""  # Full MJPEG URL for mjpeg type
 
 
 class CredentialSet(BaseModel):
@@ -127,12 +130,14 @@ def _stream_worker(camera_key: str, config: CameraConfig):
             if rec and rec.recording:
                 rec.write_frame(frame)
 
-            # Feed pre-event buffer on every frame (lightweight)
-            event_processor.buffer_frame(camera_id, frame)
-
-            # Run detection every 3rd frame
             frame_skip += 1
-            if frame_skip % 3 != 0:
+
+            # Feed pre-event buffer every 3rd frame (not every frame)
+            if frame_skip % 3 == 0:
+                event_processor.buffer_frame(camera_id, frame)
+
+            # Run detection every 5th frame to reduce CPU load
+            if frame_skip % 5 != 0:
                 continue
 
             detections = []
@@ -186,7 +191,108 @@ def _stream_worker(camera_key: str, config: CameraConfig):
     logger.info(f"Stream ended: {camera_key}")
 
 
-def start_stream(camera_key: str, config: CameraConfig):
+def _mjpeg_stream_worker(camera_key: str, stream_url: str):
+    """Background thread that reads MJPEG over HTTP and runs detection."""
+    global object_detector, face_detector
+
+    stream_info = active_streams.get(camera_key)
+    if not stream_info:
+        return
+
+    stop_event = stream_info["stop_event"]
+
+    # Per-camera motion detector
+    if camera_key not in motion_detector_cache:
+        motion_detector_cache[camera_key] = MotionDetector()
+    motion_det = motion_detector_cache[camera_key]
+
+    cam_db = db.get_camera_by_host(stream_info.get("_host", ""))
+    camera_id = cam_db["id"] if cam_db else 0
+    camera_name = stream_info.get("_name", f"MJPEG-{camera_key}")
+    frame_skip = 0
+
+    try:
+        cap = cv2.VideoCapture(stream_url)
+        if not cap.isOpened():
+            logger.error(f"MJPEG connect failed: {stream_url}")
+            stream_info["status"] = "error"
+            return
+
+        stream_info["status"] = "streaming"
+        logger.info(f"MJPEG stream connected: {stream_url}")
+
+        while not stop_event.is_set():
+            ret, frame = cap.read()
+            if not ret:
+                time.sleep(0.5)
+                continue
+
+            stream_info["latest_frame"] = frame
+            stream_info["frame_count"] = stream_info.get("frame_count", 0) + 1
+            frame_skip += 1
+
+            # Write to recorder if active
+            rec = stream_info.get("recorder")
+            if rec and rec.recording:
+                rec.write_frame(frame)
+
+            # Feed pre-event buffer every 3rd frame
+            if frame_skip % 3 == 0:
+                event_processor.buffer_frame(camera_id, frame)
+
+            # Detection every 5th frame
+            if frame_skip % 5 != 0:
+                continue
+
+            detections = []
+
+            if detection_settings.get("motion"):
+                try:
+                    detections.extend(motion_det.detect(frame))
+                except Exception as e:
+                    logger.debug(f"Motion detect error: {e}")
+
+            if detection_settings.get("objects") and (detections or frame_skip % 15 == 0):
+                try:
+                    global object_detector
+                    if object_detector is None:
+                        object_detector = ObjectDetector()
+                    detections.extend(object_detector.detect(frame))
+                except Exception as e:
+                    logger.debug(f"Object detect error: {e}")
+
+            if detection_settings.get("faces") and (detections or frame_skip % 15 == 0):
+                try:
+                    global face_detector
+                    if face_detector is None:
+                        face_detector = FaceDetector()
+                    detections.extend(face_detector.detect(frame))
+                except Exception as e:
+                    logger.debug(f"Face detect error: {e}")
+
+            if detections:
+                stream_info["active_detections"] = detections
+                try:
+                    new_events = event_processor.process(
+                        camera_id, camera_name, frame, detections)
+                    if new_events:
+                        stream_info["last_detections"] = new_events
+                except Exception as e:
+                    logger.debug(f"Event processing error: {e}")
+            else:
+                stream_info["active_detections"] = []
+
+        cap.release()
+    except Exception as e:
+        logger.error(f"MJPEG stream error: {e}")
+
+    stream_info["status"] = "disconnected"
+    logger.info(f"MJPEG stream ended: {camera_key}")
+
+
+def start_stream(camera_key: str, config: CameraConfig = None,
+                 camera_type: str = "rtsp", stream_url: str = "",
+                 camera_name: str = "", camera_host: str = ""):
     """Start a camera stream if not already running."""
     with stream_lock:
         if camera_key in active_streams and active_streams[camera_key]["status"] == "streaming":
@@ -201,9 +307,16 @@ def start_stream(camera_key: str, config: CameraConfig):
             "stop_event": stop_event,
             "status": "connecting",
             "recorder": None,
+            "_host": camera_host or (config.host if config else ""),
+            "_name": camera_name or (config.name if config else ""),
         }
 
-        t = threading.Thread(target=_stream_worker, args=(camera_key, config), daemon=True)
+        if camera_type == "mjpeg" and stream_url:
+            t = threading.Thread(target=_mjpeg_stream_worker,
+                                 args=(camera_key, stream_url), daemon=True)
+        else:
+            t = threading.Thread(target=_stream_worker,
+                                 args=(camera_key, config), daemon=True)
         t.start()
         active_streams[camera_key]["thread"] = t
 
@@ -251,7 +364,8 @@ async def list_cameras():
 @app.post("/api/cameras")
 async def add_camera(cam: CameraAdd):
     """Add a new camera."""
-    camera_id = db.add_camera(cam.name, cam.host, cam.port, cam.path)
+    camera_id = db.add_camera(cam.name, cam.host, cam.port, cam.path,
+                              camera_type=cam.type, stream_url=cam.stream_url)
     if cam.password:
         creds.set(cam.host, cam.username, cam.password)
     return {"id": camera_id, "message": f"Camera '{cam.name}' added"}
@@ -319,16 +433,23 @@ async def stream_camera(camera_id: int):
 
     # Auto-start stream if not running
     if key not in active_streams or active_streams[key]["status"] != "streaming":
-        stored_cred = creds.get(cam["host"])
-        config = CameraConfig(
-            host=cam["host"],
-            port=cam["port"],
-            path=cam["path"],
-            username=stored_cred["username"] if stored_cred else "admin",
-            password=stored_cred["password"] if stored_cred else "",
-            name=cam["name"],
-        )
-        start_stream(key, config)
+        cam_type = cam.get("type", "rtsp") or "rtsp"
+        cam_stream_url = cam.get("stream_url", "") or ""
+
+        if cam_type == "mjpeg" and cam_stream_url:
+            start_stream(key, camera_type="mjpeg", stream_url=cam_stream_url,
+                         camera_name=cam["name"], camera_host=cam["host"])
+        else:
+            stored_cred = creds.get(cam["host"])
+            config = CameraConfig(
+                host=cam["host"],
+                port=cam["port"],
+                path=cam["path"],
+                username=stored_cred["username"] if stored_cred else "admin",
+                password=stored_cred["password"] if stored_cred else "",
+                name=cam["name"],
+            )
+            start_stream(key, config)
         # Wait briefly for connection
         for _ in range(50):  # 5 seconds max
             if active_streams.get(key, {}).get("latest_frame") is not None:
@@ -336,18 +457,28 @@ async def stream_camera(camera_id: int):
             await asyncio.sleep(0.1)
 
     def mjpeg_generator():
+        last_frame_id = -1
         while True:
             stream = active_streams.get(key)
             if not stream or stream["status"] == "disconnected":
                 break
 
             frame = stream.get("latest_frame")
-            if frame is not None:
-                _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            current_id = stream.get("frame_count", 0)
+            if frame is not None and current_id != last_frame_id:
+                last_frame_id = current_id
+                # Downscale for MJPEG streaming to reduce encoding time
+                h, w = frame.shape[:2]
+                if w > 800:
+                    scale = 800 / w
+                    small = cv2.resize(frame, (800, int(h * scale)), interpolation=cv2.INTER_NEAREST)
+                else:
+                    small = frame
+                _, jpeg = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 55])
                 yield (b"--frame\r\n"
                        b"Content-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n")
 
-            time.sleep(0.066)  # ~15 fps
+            time.sleep(0.033)  # ~30 fps cap, only sends new frames
 
     return StreamingResponse(
         mjpeg_generator(),
@@ -366,16 +497,24 @@ async def start_camera_stream(camera_id: int):
     if not cam:
         raise HTTPException(404, "Camera not found")
 
-    stored_cred = creds.get(cam["host"])
-    config = CameraConfig(
-        host=cam["host"],
-        port=cam["port"],
-        path=cam["path"],
-        username=stored_cred["username"] if stored_cred else "admin",
-        password=stored_cred["password"] if stored_cred else "",
-        name=cam["name"],
-    )
-    start_stream(str(camera_id), config)
+    key = str(camera_id)
+    cam_type = cam.get("type", "rtsp") or "rtsp"
+    cam_stream_url = cam.get("stream_url", "") or ""
+
+    if cam_type == "mjpeg" and cam_stream_url:
+        start_stream(key, camera_type="mjpeg", stream_url=cam_stream_url,
+                     camera_name=cam["name"], camera_host=cam["host"])
+    else:
+        stored_cred = creds.get(cam["host"])
+        config = CameraConfig(
+            host=cam["host"],
+            port=cam["port"],
+            path=cam["path"],
+            username=stored_cred["username"] if stored_cred else "admin",
+            password=stored_cred["password"] if stored_cred else "",
+            name=cam["name"],
+        )
+        start_stream(key, config)
     return {"message": f"Stream started for camera {camera_id}"}
 
 

@@ -74,15 +74,26 @@ class Database:
         self._conn.commit()
     
     # Camera CRUD
-    def add_camera(self, name: str, host: str, port: int = 554, path: str = "/onvif1") -> int:
+    def add_camera(self, name: str, host: str, port: int = 554, path: str = "/onvif1",
+                   camera_type: str = "rtsp", stream_url: str = "") -> int:
+        # Add type column if missing (migration)
+        try:
+            self._conn.execute("SELECT type FROM cameras LIMIT 1")
+        except sqlite3.OperationalError:
+            self._conn.execute("ALTER TABLE cameras ADD COLUMN type TEXT DEFAULT 'rtsp'")
+            self._conn.execute("ALTER TABLE cameras ADD COLUMN stream_url TEXT DEFAULT ''")
+            self._conn.commit()
+
         cur = self._conn.execute(
-            """INSERT INTO cameras (name, host, port, path, last_seen)
-               VALUES (?, ?, ?, ?, datetime('now'))
+            """INSERT INTO cameras (name, host, port, path, type, stream_url, last_seen)
+               VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
                ON CONFLICT(host, port) DO UPDATE SET
                    name = excluded.name,
                    path = excluded.path,
+                   type = excluded.type,
+                   stream_url = excluded.stream_url,
                    last_seen = datetime('now')""",
-            (name, host, port, path))
+            (name, host, port, path, camera_type, stream_url))
         self._conn.commit()
         if cur.lastrowid:
             return cur.lastrowid

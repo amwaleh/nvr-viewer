@@ -18,9 +18,10 @@ logger = logging.getLogger(__name__)
 
 
 class NetworkScanner:
-    """Discover RTSP and ONVIF cameras on the local network."""
+    """Discover RTSP and MJPEG cameras on the local network."""
 
     RTSP_PORT = 554
+    MJPEG_PORTS = [8080, 8081, 8082, 80]
     ONVIF_MULTICAST_IP = "239.255.255.250"
     ONVIF_MULTICAST_PORT = 3702
 
@@ -37,8 +38,11 @@ class NetworkScanner:
         subnet: str,
         ports: list[int] | None = None,
         timeout: float = 1.0,
-    ) -> list[str]:
-        """Scan a subnet for hosts responding on any requested TCP port."""
+    ) -> list[dict]:
+        """Scan a subnet for hosts responding on any requested TCP port.
+        
+        Returns list of dicts: [{host: str, open_ports: [int]}]
+        """
         ports = ports or [self.RTSP_PORT]
         network = ipaddress.ip_network(subnet, strict=False)
         hosts = [str(ip) for ip in network.hosts()]
@@ -55,51 +59,68 @@ class NetworkScanner:
             worker_count,
         )
 
-        responsive_hosts: set[str] = set()
+        responsive_hosts: dict[str, list[int]] = {}
         started_at = time.perf_counter()
 
         with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="nvr-scan") as executor:
             futures = {
-                executor.submit(self._probe_host, host, ports, timeout): host
+                executor.submit(self._probe_host_ports, host, ports, timeout): host
                 for host in hosts
             }
             for future in as_completed(futures):
                 host = futures[future]
                 try:
-                    result = future.result()
+                    open_ports = future.result()
                 except Exception as exc:
                     logger.debug("Port scan failed for %s: %s", host, exc)
                     continue
-                if result:
-                    responsive_hosts.add(result)
+                if open_ports:
+                    responsive_hosts[host] = open_ports
 
         elapsed = time.perf_counter() - started_at
-        ordered_hosts = sorted(responsive_hosts, key=self._host_sort_key)
+        result = sorted(
+            [{"host": h, "open_ports": p} for h, p in responsive_hosts.items()],
+            key=lambda x: self._host_sort_key(x["host"]),
+        )
         logger.info(
             "Subnet scan complete: %d responsive hosts found in %.2fs",
-            len(ordered_hosts),
+            len(result),
             elapsed,
         )
-        return ordered_hosts
+        return result
 
     def discover_cameras(self, subnet: str | None = None) -> list[dict]:
-        """Scan the local subnet and probe each RTSP-responsive host."""
+        """Scan the local subnet and probe for RTSP and MJPEG cameras."""
+        import http.client
         from ..core.rtsp_client import RTSPClient
 
         subnet = subnet or self.get_local_subnet()
-        responsive_hosts = self.scan_subnet(subnet, ports=[self.RTSP_PORT], timeout=1.0)
-        if not responsive_hosts:
-            logger.info("No RTSP-responsive hosts found in %s", subnet)
+        local_ip = self._get_local_ip()
+        all_ports = [self.RTSP_PORT] + self.MJPEG_PORTS
+        responsive = self.scan_subnet(subnet, ports=all_ports, timeout=1.0)
+        if not responsive:
+            logger.info("No responsive hosts found in %s", subnet)
             return []
 
-        worker_count = min(32, max(4, len(responsive_hosts)))
-        logger.info("Probing %d responsive hosts for RTSP cameras", len(responsive_hosts))
+        worker_count = min(32, max(4, len(responsive)))
+        logger.info("Probing %d responsive hosts for cameras", len(responsive))
 
         cameras: list[dict] = []
+
+        # Separate RTSP and MJPEG candidates, excluding our own IP
+        rtsp_hosts = [r["host"] for r in responsive if self.RTSP_PORT in r["open_ports"]]
+        mjpeg_candidates = [
+            (r["host"], p)
+            for r in responsive
+            for p in r["open_ports"]
+            if p != self.RTSP_PORT and r["host"] != local_ip
+        ]
+
+        # Probe RTSP cameras
         with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="rtsp-probe") as executor:
             futures = {
                 executor.submit(RTSPClient.probe_camera, host, self.RTSP_PORT, 2.0): host
-                for host in responsive_hosts
+                for host in rtsp_hosts
             }
             for future in as_completed(futures):
                 host = futures[future]
@@ -109,10 +130,39 @@ class NetworkScanner:
                     logger.debug("RTSP probe failed for %s: %s", host, exc)
                     continue
                 if camera_info:
+                    camera_info["type"] = "rtsp"
                     cameras.append(camera_info)
 
+        # Probe MJPEG cameras (check for Motion or generic MJPEG streams)
+        rtsp_found = {c["host"] for c in cameras}
+        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="mjpeg-probe") as executor:
+            futures = {
+                executor.submit(self._probe_mjpeg, host, port, 3.0): (host, port)
+                for host, port in mjpeg_candidates
+                if host not in rtsp_found  # Skip hosts already found as RTSP
+            }
+            for future in as_completed(futures):
+                host, port = futures[future]
+                try:
+                    mjpeg_info = future.result()
+                except Exception as exc:
+                    logger.debug("MJPEG probe failed for %s:%d: %s", host, port, exc)
+                    continue
+                if mjpeg_info:
+                        # Deduplicate: prefer Motion-detected entry over raw MJPEG
+                        existing_idx = next(
+                            (i for i, c in enumerate(cameras) if c["host"] == host and c.get("type") == "mjpeg"),
+                            None
+                        )
+                        if existing_idx is not None:
+                            # Keep the one with "Motion" server (more specific)
+                            if mjpeg_info.get("server") == "Motion":
+                                cameras[existing_idx] = mjpeg_info
+                        else:
+                            cameras.append(mjpeg_info)
+
         cameras.sort(key=lambda item: self._host_sort_key(item["host"]))
-        logger.info("Discovered %d RTSP camera(s) in %s", len(cameras), subnet)
+        logger.info("Discovered %d camera(s) in %s", len(cameras), subnet)
         return cameras
 
     def discover_onvif(self, timeout: float = 3.0) -> list[dict]:
@@ -179,6 +229,23 @@ class NetworkScanner:
         return discovered
 
     @staticmethod
+    def _probe_host_ports(host: str, ports: list[int], timeout: float) -> list[int]:
+        """Return list of open ports on the host."""
+        open_ports = []
+        for port in ports:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                sock.settimeout(timeout)
+                if sock.connect_ex((host, port)) == 0:
+                    logger.debug("Host %s responded on port %d", host, port)
+                    open_ports.append(port)
+            except OSError as exc:
+                logger.debug("Connect probe failed for %s:%d: %s", host, port, exc)
+            finally:
+                sock.close()
+        return open_ports
+
+    @staticmethod
     def _probe_host(host: str, ports: list[int], timeout: float) -> str | None:
         """Return the host if any requested port accepts a TCP connection."""
         for port in ports:
@@ -193,6 +260,98 @@ class NetworkScanner:
             finally:
                 sock.close()
         return None
+
+    @staticmethod
+    def _probe_mjpeg(host: str, port: int, timeout: float) -> dict | None:
+        """Probe an HTTP port to detect MJPEG camera streams.
+        
+        Checks for Motion web UI or generic MJPEG stream endpoints.
+        Returns camera info dict or None.
+        """
+        import http.client
+
+        probe_timeout = min(timeout, 2.0)
+
+        try:
+            # First check the root page for Motion or camera signature
+            conn = http.client.HTTPConnection(host, port, timeout=probe_timeout)
+            try:
+                conn.request("GET", "/")
+                resp = conn.getresponse()
+                ct = resp.getheader("Content-Type", "")
+                body = resp.read(2000).decode("utf-8", errors="ignore")
+            except Exception:
+                body = ""
+                ct = ""
+            finally:
+                conn.close()
+
+            # Check if root itself is an MJPEG stream
+            if "multipart" in ct or "mjpeg" in ct.lower():
+                stream_url = f"http://{host}:{port}/"
+                logger.info("MJPEG stream at root %s:%d", host, port)
+                return {
+                    "host": host, "port": port, "name": f"MJPEG Camera ({host})",
+                    "path": "", "type": "mjpeg", "stream_url": stream_url, "server": "MJPEG",
+                }
+
+            is_motion = "<title>Motion</title>" in body or "motion-project" in body
+            # Quick check: if not Motion and no camera-related keywords, skip
+            camera_keywords = ["camera", "stream", "video", "mjpeg", "surveillance", "ipcam", "webcam"]
+            looks_like_camera = is_motion or any(kw in body.lower() for kw in camera_keywords)
+            if not looks_like_camera:
+                return None
+
+            name = "Motion Camera" if is_motion else f"MJPEG Camera ({host})"
+
+            if is_motion:
+                # Motion streams on port+1 (web control on 8080, stream on 8081)
+                stream_port = port + 1
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                try:
+                    sock.settimeout(1.0)
+                    if sock.connect_ex((host, stream_port)) == 0:
+                        stream_url = f"http://{host}:{stream_port}/0/stream"
+                    else:
+                        stream_url = f"http://{host}:{port}/0/stream"
+                except OSError:
+                    stream_url = f"http://{host}:{port}/0/stream"
+                finally:
+                    sock.close()
+            else:
+                # Try common MJPEG paths with short timeout
+                stream_paths = ["/0/stream", "/video", "/mjpeg", "/stream"]
+                stream_url = None
+                for path in stream_paths:
+                    try:
+                        conn = http.client.HTTPConnection(host, port, timeout=1.5)
+                        conn.request("GET", path)
+                        resp = conn.getresponse()
+                        path_ct = resp.getheader("Content-Type", "")
+                        resp.read(128)
+                        conn.close()
+                        if "multipart" in path_ct or "mjpeg" in path_ct.lower() or "image/jpeg" in path_ct:
+                            stream_url = f"http://{host}:{port}{path}"
+                            break
+                    except Exception:
+                        pass
+                    finally:
+                        try: conn.close()
+                        except Exception: pass
+
+                if not stream_url:
+                    return None
+
+            logger.info("MJPEG camera found at %s:%d (stream: %s)", host, port, stream_url)
+            return {
+                "host": host, "port": port, "name": name,
+                "path": "", "type": "mjpeg", "stream_url": stream_url,
+                "server": "Motion" if is_motion else "MJPEG",
+            }
+
+        except Exception as exc:
+            logger.debug("MJPEG probe error for %s:%d: %s", host, port, exc)
+            return None
 
     @staticmethod
     def _get_local_ip() -> str:

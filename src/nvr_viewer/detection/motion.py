@@ -27,9 +27,18 @@ class MotionDetector:
         Returns list of dicts: [{type: 'motion', bbox: (x,y,w,h), area: int, confidence: float}]
         """
         self._frame_count += 1
-        
+
+        # Downscale for faster processing
+        h_orig, w_orig = frame.shape[:2]
+        scale = 1.0
+        if w_orig > 640:
+            scale = 640 / w_orig
+            small = cv2.resize(frame, (640, int(h_orig * scale)), interpolation=cv2.INTER_NEAREST)
+        else:
+            small = frame
+
         # Apply background subtraction
-        mask = self._bg_sub.apply(frame)
+        mask = self._bg_sub.apply(small)
         
         # Remove shadows (value 127 in MOG2)
         _, mask = cv2.threshold(mask, 200, 255, cv2.THRESH_BINARY)
@@ -47,15 +56,20 @@ class MotionDetector:
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         detections = []
-        frame_area = frame.shape[0] * frame.shape[1]
+        small_area = small.shape[0] * small.shape[1]
         
         for contour in contours:
             area = cv2.contourArea(contour)
-            if area < self.min_area:
+            if area < self.min_area * (scale ** 2):
                 continue
             
             x, y, w, h = cv2.boundingRect(contour)
-            confidence = min(area / frame_area * 10, 1.0)  # Normalize
+            # Scale bbox back to original resolution
+            if scale != 1.0:
+                x, y, w, h = int(x / scale), int(y / scale), int(w / scale), int(h / scale)
+                area = area / (scale ** 2)
+            
+            confidence = min(area / (h_orig * w_orig) * 10, 1.0)
             
             detections.append({
                 "type": "motion",

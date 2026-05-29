@@ -28,6 +28,7 @@ class NVRApp {
             this.loadRecordings(),
             this.loadEvents(),
             this.loadStatus(),
+            this.loadDetectionSettings(),
         ]);
         this.startStatusPolling();
         this.startEventsPolling();
@@ -320,12 +321,20 @@ class NVRApp {
             const state = this.getCameraState(camera);
             const enabled = this.feedState.get(camera.id) !== false;
 
+            const camType = camera.type || 'rtsp';
+            const typeBadge = camType === 'mjpeg'
+                ? '<span style="background:#e67e22;color:#fff;font-size:.65rem;padding:1px 5px;border-radius:3px;margin-left:6px;">MJPEG</span>'
+                : '<span style="background:#2980b9;color:#fff;font-size:.65rem;padding:1px 5px;border-radius:3px;margin-left:6px;">RTSP</span>';
+            const hostInfo = camType === 'mjpeg'
+                ? escapeHtml(camera.stream_url || `${camera.host}:${camera.port}`)
+                : `${escapeHtml(camera.host)}:${escapeHtml(camera.port)}${escapeHtml(camera.path)}`;
+
             return `
                 <div class="list-card" data-camera-list-item="${camera.id}" style="position:relative;">
                     <div class="list-card-row">
                         <div class="list-card-meta">
-                            <strong>${escapeHtml(camera.name)}</strong>
-                            <small>${escapeHtml(camera.host)}:${escapeHtml(camera.port)}${escapeHtml(camera.path)}</small>
+                            <strong>${escapeHtml(camera.name)}${typeBadge}</strong>
+                            <small>${hostInfo}</small>
                         </div>
                         <span class="status-badge ${this.getStatusClass(state.status)}" data-role="status-badge">${escapeHtml(state.status)}</span>
                     </div>
@@ -472,12 +481,22 @@ class NVRApp {
                 ? '<span style="font-size:11px;background:#2d6a4f;color:#b7e4c7;padding:2px 8px;border-radius:10px;">Registered</span>'
                 : '<span style="font-size:11px;background:#7c5cfc;color:#fff;padding:2px 8px;border-radius:10px;">New</span>';
 
+            const camType = camera.type || 'rtsp';
+            const typeBadge = camType === 'mjpeg'
+                ? '<span style="font-size:10px;background:#e67e22;color:#fff;padding:1px 6px;border-radius:8px;margin-left:4px;">MJPEG</span>'
+                : '<span style="font-size:10px;background:#2980b9;color:#fff;padding:1px 6px;border-radius:8px;margin-left:4px;">RTSP</span>';
+
+            const hostInfo = camType === 'mjpeg'
+                ? escapeHtml(camera.stream_url || `${camera.host}:${camera.port}`)
+                : `${escapeHtml(camera.host)}:${escapeHtml(camera.port ?? 554)}${escapeHtml(camera.path || '/onvif1')}`;
+
             return `
             <div class="list-card">
                 <div class="list-card-row">
                     <div class="list-card-meta">
-                        <strong>${escapeHtml(camera.name || camera.host)}</strong> ${badge}
-                        <small>${escapeHtml(camera.host)}:${escapeHtml(camera.port ?? 554)}${escapeHtml(camera.path || '/onvif1')}</small>
+                        <strong>${escapeHtml(camera.name || camera.host)}</strong> ${typeBadge} ${badge}
+                        <small>${hostInfo}</small>
+                        ${camera.server ? `<small style="color:#888;">Server: ${escapeHtml(camera.server)}</small>` : ''}
                     </div>
                     <button
                         class="btn"
@@ -487,6 +506,8 @@ class NVRApp {
                         data-host="${escapeHtml(camera.host)}"
                         data-port="${escapeHtml(camera.port ?? 554)}"
                         data-path="${escapeHtml(camera.path || '/onvif1')}"
+                        data-type="${escapeHtml(camType)}"
+                        data-stream-url="${escapeHtml(camera.stream_url || '')}"
                         ${existing ? 'disabled style="opacity:.5"' : ''}
                     >
                         ${existing ? 'Added' : 'Add'}
@@ -518,18 +539,59 @@ class NVRApp {
             this.loadEvents(event.target.value);
         });
 
+        // Detection toggle checkboxes
+        ['det-motion', 'det-objects', 'det-faces'].forEach(id => {
+            document.getElementById(id)?.addEventListener('change', () => this.saveDetectionSettings());
+        });
+
+        // Camera type toggle (RTSP vs MJPEG)
+        document.getElementById('camera-type')?.addEventListener('change', (e) => {
+            const isMjpeg = e.target.value === 'mjpeg';
+            document.querySelectorAll('.rtsp-field').forEach(el => el.style.display = isMjpeg ? 'none' : '');
+            document.querySelectorAll('.mjpeg-field').forEach(el => el.style.display = isMjpeg ? '' : 'none');
+            // Adjust required attributes
+            document.getElementById('camera-host').required = !isMjpeg;
+            document.getElementById('camera-port').required = !isMjpeg;
+            document.getElementById('camera-path').required = !isMjpeg;
+            const urlInput = document.getElementById('camera-stream-url');
+            if (urlInput) urlInput.required = isMjpeg;
+        });
+
         document.getElementById('add-camera-form')?.addEventListener('submit', async (event) => {
             event.preventDefault();
             const form = new FormData(event.target);
-            await this.addCamera({
-                name: form.get('name')?.toString().trim(),
-                host: form.get('host')?.toString().trim(),
-                port: Number(form.get('port') || 554),
-                path: form.get('path')?.toString().trim() || '/onvif1',
-                username: form.get('username')?.toString().trim() || 'admin',
-                password: form.get('password')?.toString() || '',
-            });
+            const camType = form.get('type')?.toString() || 'rtsp';
+
+            if (camType === 'mjpeg') {
+                const streamUrl = form.get('stream_url')?.toString().trim() || '';
+                // Extract host from URL for DB uniqueness
+                let host = '0.0.0.0';
+                try { host = new URL(streamUrl).hostname; } catch {}
+                let port = 8081;
+                try { port = parseInt(new URL(streamUrl).port) || 8081; } catch {}
+                await this.addCamera({
+                    name: form.get('name')?.toString().trim(),
+                    host: host,
+                    port: port,
+                    path: '',
+                    username: '',
+                    password: '',
+                    type: 'mjpeg',
+                    stream_url: streamUrl,
+                });
+            } else {
+                await this.addCamera({
+                    name: form.get('name')?.toString().trim(),
+                    host: form.get('host')?.toString().trim(),
+                    port: Number(form.get('port') || 554),
+                    path: form.get('path')?.toString().trim() || '/onvif1',
+                    username: form.get('username')?.toString().trim() || 'admin',
+                    password: form.get('password')?.toString() || '',
+                    type: 'rtsp',
+                });
+            }
             event.target.reset();
+            document.getElementById('camera-type').dispatchEvent(new Event('change'));
             const pathInput = document.getElementById('camera-path');
             const portInput = document.getElementById('camera-port');
             const usernameInput = document.getElementById('camera-username');
@@ -563,6 +625,8 @@ class NVRApp {
                     path: target.dataset.path || '/onvif1',
                     username: 'admin',
                     password: '',
+                    type: target.dataset.type || 'rtsp',
+                    stream_url: target.dataset.streamUrl || '',
                 });
                 // Update button to show it's been added
                 target.textContent = 'Added';
@@ -618,6 +682,37 @@ class NVRApp {
     startEventsPolling() {
         if (this.eventsInterval) clearInterval(this.eventsInterval);
         this.eventsInterval = setInterval(() => this.loadEvents(), 30000);
+    }
+
+    // --- Detection Settings ---
+    async loadDetectionSettings() {
+        try {
+            const settings = await this.api('GET', '/api/detection');
+            document.getElementById('det-motion').checked = !!settings.motion;
+            document.getElementById('det-objects').checked = !!settings.objects;
+            document.getElementById('det-faces').checked = !!settings.faces;
+        } catch (e) {
+            console.error('Failed to load detection settings', e);
+        }
+    }
+
+    async saveDetectionSettings() {
+        const body = {
+            motion: document.getElementById('det-motion').checked,
+            objects: document.getElementById('det-objects').checked,
+            faces: document.getElementById('det-faces').checked,
+        };
+        const statusEl = document.getElementById('detection-status');
+        try {
+            await this.api('POST', '/api/detection', body);
+            if (statusEl) {
+                statusEl.textContent = '✓ Settings saved';
+                statusEl.className = 'detection-status saved';
+                setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'detection-status'; }, 2000);
+            }
+        } catch (e) {
+            this.showToast(`Failed to update detection: ${e.message}`, 'error');
+        }
     }
 
     // --- Helpers ---
