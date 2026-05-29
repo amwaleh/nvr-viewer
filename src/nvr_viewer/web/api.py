@@ -375,7 +375,20 @@ async def list_sdcard_files(camera_id: int):
         password=stored_cred["password"] if stored_cred else "",
     )
     files = sd.list_files()
-    return {"camera": cam["name"], "host": cam["host"], "files": files}
+
+    # If no SD card files found, return helpful message
+    if not files:
+        return {
+            "camera": cam["name"],
+            "host": cam["host"],
+            "files": [],
+            "message": "SD card listing not available for this camera. "
+                       "Yoosee cameras use a proprietary protocol for SD card access. "
+                       "Use the Record feature to save streams locally instead.",
+            "supported": False,
+        }
+
+    return {"camera": cam["name"], "host": cam["host"], "files": files, "supported": True}
 
 
 @app.post("/api/sdcard/{camera_id}/download")

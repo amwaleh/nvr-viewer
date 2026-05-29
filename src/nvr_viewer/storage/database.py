@@ -76,10 +76,20 @@ class Database:
     # Camera CRUD
     def add_camera(self, name: str, host: str, port: int = 554, path: str = "/onvif1") -> int:
         cur = self._conn.execute(
-            "INSERT OR REPLACE INTO cameras (name, host, port, path, last_seen) VALUES (?, ?, ?, ?, datetime('now'))",
+            """INSERT INTO cameras (name, host, port, path, last_seen)
+               VALUES (?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(host, port) DO UPDATE SET
+                   name = excluded.name,
+                   path = excluded.path,
+                   last_seen = datetime('now')""",
             (name, host, port, path))
         self._conn.commit()
-        return cur.lastrowid
+        if cur.lastrowid:
+            return cur.lastrowid
+        # ON CONFLICT UPDATE doesn't set lastrowid — fetch the existing id
+        row = self._conn.execute(
+            "SELECT id FROM cameras WHERE host = ? AND port = ?", (host, port)).fetchone()
+        return row["id"] if row else 0
     
     def get_cameras(self) -> list[dict]:
         rows = self._conn.execute("SELECT * FROM cameras ORDER BY name").fetchall()
