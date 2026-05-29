@@ -53,8 +53,8 @@ event_processor = EventProcessor(db=db)
 # Detection settings
 detection_settings = {
     "motion": True,
-    "objects": False,  # Heavy — user must enable explicitly
-    "faces": False,
+    "objects": True,  # Heavy — user must enable explicitly
+    "faces": True,
 }
 
 # Active camera streams: {camera_id: {client, decoder, latest_frame, thread, stop_event}}
