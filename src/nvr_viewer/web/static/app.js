@@ -73,7 +73,13 @@ class NVRApp {
 
     async scanNetwork() {
         const scanBtn = document.getElementById('scan-network-btn');
+        const defaultView = document.getElementById('cameras-default-view');
+        const scanView = document.getElementById('cameras-scan-view');
         const resultsContainer = document.getElementById('scan-results');
+
+        // Switch to scan view
+        if (defaultView) defaultView.style.display = 'none';
+        if (scanView) scanView.style.display = 'block';
 
         // Show loading state
         if (scanBtn) {
@@ -92,7 +98,6 @@ class NVRApp {
             const cameras = await this.api('GET', '/api/scan');
             this.renderScanResults(cameras);
             this.showToast(`Scan complete: ${cameras.length} device(s) found.`, 'success');
-            this.switchTab('cameras');
         } catch (error) {
             if (resultsContainer) {
                 resultsContainer.innerHTML = '<div class="empty-inline">Scan failed. Try again.</div>';
@@ -104,6 +109,13 @@ class NVRApp {
                 scanBtn.innerHTML = 'Scan Network';
             }
         }
+    }
+
+    showCamerasDefaultView() {
+        const defaultView = document.getElementById('cameras-default-view');
+        const scanView = document.getElementById('cameras-scan-view');
+        if (defaultView) defaultView.style.display = 'block';
+        if (scanView) scanView.style.display = 'none';
     }
 
     async addCamera(data) {
@@ -493,6 +505,7 @@ class NVRApp {
         });
 
         document.getElementById('scan-network-btn')?.addEventListener('click', () => this.scanNetwork());
+        document.getElementById('scan-back-btn')?.addEventListener('click', () => this.showCamerasDefaultView());
         document.getElementById('refresh-recordings-btn')?.addEventListener('click', () => this.loadRecordings());
         document.getElementById('sdcard-list-btn')?.addEventListener('click', () => {
             const cameraId = document.getElementById('sdcard-camera-select')?.value;
@@ -549,6 +562,10 @@ class NVRApp {
                     username: 'admin',
                     password: '',
                 });
+                // Update button to show it's been added
+                target.textContent = 'Added';
+                target.disabled = true;
+                target.style.opacity = '.5';
             } else if (action === 'delete-camera') {
                 const camera = this.cameras.find(c => c.id === id);
                 if (confirm(`Delete camera "${camera?.name || id}"? This cannot be undone.`)) {

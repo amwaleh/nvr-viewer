@@ -719,6 +719,7 @@
                 </div>
                 <div class="tab-content">
                     <section class="tab-panel active" id="tab-cameras">
+                        <div id="cameras-default-view">
                         <div class="stack">
                             <div class="section-header">
                                 <div>
@@ -767,16 +768,22 @@
                                 </div>
                             </form>
                         </div>
+                        </div><!-- end cameras-default-view -->
 
+                        <div id="cameras-scan-view" style="display:none;">
                         <div class="stack">
-                            <div>
-                                <h3>Scan Results</h3>
-                                <p class="panel-subtitle">Discovered devices on the local subnet ready to add.</p>
+                            <div class="section-header">
+                                <div>
+                                    <h3>Scan Results</h3>
+                                    <p class="panel-subtitle">Discovered devices on the local subnet.</p>
+                                </div>
+                                <button id="scan-back-btn" type="button" class="btn-secondary">&larr; Back</button>
                             </div>
                             <div id="scan-results" class="scan-results">
                                 <div class="empty-inline">No scan results yet.</div>
                             </div>
                         </div>
+                        </div><!-- end cameras-scan-view -->
                     </section>
 
                     <section class="tab-panel" id="tab-recordings">
