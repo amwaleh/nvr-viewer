@@ -381,8 +381,9 @@ class NVRApp {
             const camera = this.cameras.find((item) => item.id === event.camera_id);
             const confidence = Number(event.confidence ?? 0);
             const confidencePct = confidence <= 1 ? confidence * 100 : confidence;
+            const captionText = `${event.detection_type} - ${event.label || ''} (${this.formatTime(event.timestamp)})`.replace(/'/g, "\\'");
             const snapshotCell = event.snapshot_url
-                ? `<a href="${escapeHtml(event.snapshot_url)}" target="_blank"><img src="${escapeHtml(event.snapshot_url)}" style="max-width:80px;max-height:60px;border-radius:4px;cursor:pointer;" loading="lazy"></a>`
+                ? `<img src="${escapeHtml(event.snapshot_url)}" style="max-width:80px;max-height:60px;border-radius:4px;cursor:pointer;" loading="lazy" onclick="document.getElementById('snapshot-lightbox-img').src=this.src;document.getElementById('snapshot-lightbox-caption').textContent='${captionText}';document.getElementById('snapshot-lightbox').style.display='flex';">`
                 : '—';
 
             return `
@@ -668,3 +669,4 @@ class NVRApp {
 
 // Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', () => { window.app = new NVRApp(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.getElementById('snapshot-lightbox').style.display = 'none'; });
