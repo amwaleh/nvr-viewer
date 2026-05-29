@@ -321,7 +321,7 @@ class NVRApp {
             const enabled = this.feedState.get(camera.id) !== false;
 
             return `
-                <div class="list-card" data-camera-list-item="${camera.id}">
+                <div class="list-card" data-camera-list-item="${camera.id}" style="position:relative;">
                     <div class="list-card-row">
                         <div class="list-card-meta">
                             <strong>${escapeHtml(camera.name)}</strong>
@@ -332,8 +332,10 @@ class NVRApp {
                     <div class="action-row">
                         <button class="btn" type="button" data-action="connect-camera" data-id="${camera.id}" data-role="connect-button" ${enabled ? 'disabled' : ''}>Connect</button>
                         <button class="btn-secondary" type="button" data-action="disconnect-camera" data-id="${camera.id}" data-role="disconnect-button" ${enabled ? '' : 'disabled'}>Disconnect</button>
-                        <button class="btn-secondary" type="button" data-action="edit-camera" data-id="${camera.id}" title="Edit">Edit</button>
-                        <button class="btn-secondary" type="button" data-action="delete-camera" data-id="${camera.id}" title="Delete" style="color:#e74c3c;">Delete</button>
+                    </div>
+                    <div style="position:absolute;bottom:8px;right:8px;display:flex;gap:6px;">
+                        <button class="btn-ghost" type="button" data-action="edit-camera" data-id="${camera.id}" title="Edit" style="font-size:14px;padding:2px 6px;opacity:.6;">&#9998;</button>
+                        <button class="btn-ghost" type="button" data-action="delete-camera" data-id="${camera.id}" title="Delete" style="font-size:14px;padding:2px 6px;opacity:.6;color:#e74c3c;">&#128465;</button>
                     </div>
                 </div>
             `;
