@@ -291,18 +291,17 @@ class RTSPClient:
         frame_count = 0
 
         while not stop_check():
-            if len(buf) < 4:
-                try:
-                    data = self._sock.recv(65536)
-                    if not data:
-                        logger.info("RTSP socket closed by peer")
-                        break
-                    buf += data
-                except socket.timeout:
-                    continue
-                except Exception as exc:
-                    logger.error("Socket error: %s", exc)
+            try:
+                data = self._sock.recv(65536)
+                if not data:
+                    logger.info("RTSP socket closed by peer")
                     break
+                buf += data
+            except socket.timeout:
+                continue
+            except Exception as exc:
+                logger.error("Socket error: %s", exc)
+                break
 
             while len(buf) >= 4:
                 # RTSP interleaved RTP frames begin with '$' (0x24).
@@ -365,9 +364,6 @@ class RTSPClient:
                         self._nal_buffer = b""
 
                 buf = buf[4 + plen :]
-
-            if len(buf) < 4:
-                continue
 
         self.disconnect()
         logger.info("Stream ended after %d frames", frame_count)

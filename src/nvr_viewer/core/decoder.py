@@ -53,5 +53,4 @@ class H264Decoder:
 
     def close(self):
         if self._codec:
-            self._codec.close()
             self._codec = None
