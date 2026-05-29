@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "nvr-viewer"
+version = "0.1.0"
+description = "Network Video Recorder — auto-detect cameras, record, and analyze with AI detection"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Alex Mwaleh", email = "alexmwaleh@microsoft.com"}]
+
+dependencies = [
+    "opencv-python>=4.8",
+    "av>=12.0",
+    "numpy>=1.24",
+    "ultralytics>=8.0",
+    "cryptography>=41.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff>=0.4"]
+
+[project.scripts]
+nvr-viewer = "nvr_viewer.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
