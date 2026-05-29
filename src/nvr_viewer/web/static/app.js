@@ -72,13 +72,37 @@ class NVRApp {
     }
 
     async scanNetwork() {
+        const scanBtn = document.getElementById('scan-network-btn');
+        const resultsContainer = document.getElementById('scan-results');
+
+        // Show loading state
+        if (scanBtn) {
+            scanBtn.disabled = true;
+            scanBtn.innerHTML = '<span class="spinner"></span> Scanning...';
+        }
+        if (resultsContainer) {
+            resultsContainer.innerHTML = `
+                <div style="display:flex;align-items:center;gap:12px;padding:20px;justify-content:center;color:#aaa;">
+                    <div class="spinner" style="width:24px;height:24px;"></div>
+                    <span>Scanning network for cameras...</span>
+                </div>`;
+        }
+
         try {
             const cameras = await this.api('GET', '/api/scan');
             this.renderScanResults(cameras);
             this.showToast(`Scan complete: ${cameras.length} device(s) found.`, 'success');
             this.switchTab('cameras');
         } catch (error) {
+            if (resultsContainer) {
+                resultsContainer.innerHTML = '<div class="empty-inline">Scan failed. Try again.</div>';
+            }
             this.showToast(`Network scan failed: ${error.message}`, 'error');
+        } finally {
+            if (scanBtn) {
+                scanBtn.disabled = false;
+                scanBtn.innerHTML = 'Scan Network';
+            }
         }
     }
 
@@ -296,6 +320,8 @@ class NVRApp {
                     <div class="action-row">
                         <button class="btn" type="button" data-action="connect-camera" data-id="${camera.id}" data-role="connect-button" ${enabled ? 'disabled' : ''}>Connect</button>
                         <button class="btn-secondary" type="button" data-action="disconnect-camera" data-id="${camera.id}" data-role="disconnect-button" ${enabled ? '' : 'disabled'}>Disconnect</button>
+                        <button class="btn-secondary" type="button" data-action="edit-camera" data-id="${camera.id}" title="Edit">&#9998;</button>
+                        <button class="btn-secondary" type="button" data-action="delete-camera" data-id="${camera.id}" title="Delete" style="color:#e74c3c;">&#128465;</button>
                     </div>
                 </div>
             `;
@@ -422,15 +448,21 @@ class NVRApp {
         if (!container) return;
 
         if (!cameras.length) {
-            container.innerHTML = '<div class="empty-inline">No cameras discovered during the last scan.</div>';
+            container.innerHTML = '<div class="empty-inline">No cameras discovered on the network.</div>';
             return;
         }
 
-        container.innerHTML = cameras.map((camera) => `
+        container.innerHTML = cameras.map((camera) => {
+            const existing = this.cameras.find(c => c.host === camera.host);
+            const badge = existing
+                ? '<span style="font-size:11px;background:#2d6a4f;color:#b7e4c7;padding:2px 8px;border-radius:10px;">Registered</span>'
+                : '<span style="font-size:11px;background:#7c5cfc;color:#fff;padding:2px 8px;border-radius:10px;">New</span>';
+
+            return `
             <div class="list-card">
                 <div class="list-card-row">
                     <div class="list-card-meta">
-                        <strong>${escapeHtml(camera.name || camera.host)}</strong>
+                        <strong>${escapeHtml(camera.name || camera.host)}</strong> ${badge}
                         <small>${escapeHtml(camera.host)}:${escapeHtml(camera.port ?? 554)}${escapeHtml(camera.path || '/onvif1')}</small>
                     </div>
                     <button
@@ -441,12 +473,13 @@ class NVRApp {
                         data-host="${escapeHtml(camera.host)}"
                         data-port="${escapeHtml(camera.port ?? 554)}"
                         data-path="${escapeHtml(camera.path || '/onvif1')}"
+                        ${existing ? 'disabled style="opacity:.5"' : ''}
                     >
-                        Add
+                        ${existing ? 'Added' : 'Add'}
                     </button>
                 </div>
             </div>
-        `).join('');
+        `}).join('');
     }
 
     // --- Event Listeners ---
@@ -516,6 +549,23 @@ class NVRApp {
                     username: 'admin',
                     password: '',
                 });
+            } else if (action === 'delete-camera') {
+                const camera = this.cameras.find(c => c.id === id);
+                if (confirm(`Delete camera "${camera?.name || id}"? This cannot be undone.`)) {
+                    try {
+                        await this.api('DELETE', `/api/cameras/${id}`);
+                        this.showToast('Camera deleted', 'success');
+                        await this.loadCameras();
+                    } catch (e) {
+                        this.showToast(`Delete failed: ${e.message}`, 'error');
+                    }
+                }
+            } else if (action === 'edit-camera') {
+                this.openEditCameraDialog(id);
+            } else if (action === 'save-edit-camera') {
+                await this.saveEditCamera();
+            } else if (action === 'cancel-edit-camera') {
+                document.getElementById('edit-camera-dialog').style.display = 'none';
             }
         });
     }
@@ -671,6 +721,68 @@ class NVRApp {
                 if (disconnectButton) disconnectButton.disabled = !enabled;
             }
         });
+    }
+
+    openEditCameraDialog(cameraId) {
+        const camera = this.cameras.find(c => c.id === cameraId);
+        if (!camera) return;
+
+        let dialog = document.getElementById('edit-camera-dialog');
+        if (!dialog) {
+            dialog = document.createElement('div');
+            dialog.id = 'edit-camera-dialog';
+            document.body.appendChild(dialog);
+        }
+
+        dialog.style.cssText = 'display:flex;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.7);align-items:center;justify-content:center;';
+        dialog.innerHTML = `
+            <div style="background:#1e1e2e;border-radius:12px;padding:24px;width:400px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.5);">
+                <h3 style="margin:0 0 16px;color:#e0e0e0;">Edit Camera</h3>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                    <label style="color:#aaa;font-size:13px;">Name
+                        <input id="edit-cam-name" type="text" value="${escapeHtml(camera.name)}" style="width:100%;padding:8px;border-radius:6px;border:1px solid #444;background:#2a2a3e;color:#fff;margin-top:4px;">
+                    </label>
+                    <label style="color:#aaa;font-size:13px;">Host / IP
+                        <input id="edit-cam-host" type="text" value="${escapeHtml(camera.host)}" style="width:100%;padding:8px;border-radius:6px;border:1px solid #444;background:#2a2a3e;color:#fff;margin-top:4px;">
+                    </label>
+                    <label style="color:#aaa;font-size:13px;">Port
+                        <input id="edit-cam-port" type="number" value="${camera.port}" style="width:100%;padding:8px;border-radius:6px;border:1px solid #444;background:#2a2a3e;color:#fff;margin-top:4px;">
+                    </label>
+                    <label style="color:#aaa;font-size:13px;">RTSP Path
+                        <input id="edit-cam-path" type="text" value="${escapeHtml(camera.path)}" style="width:100%;padding:8px;border-radius:6px;border:1px solid #444;background:#2a2a3e;color:#fff;margin-top:4px;">
+                    </label>
+                    <label style="color:#aaa;font-size:13px;">Password <small>(leave empty to keep current)</small>
+                        <input id="edit-cam-password" type="password" placeholder="unchanged" style="width:100%;padding:8px;border-radius:6px;border:1px solid #444;background:#2a2a3e;color:#fff;margin-top:4px;">
+                    </label>
+                </div>
+                <input type="hidden" id="edit-cam-id" value="${camera.id}">
+                <div style="display:flex;gap:10px;margin-top:18px;justify-content:flex-end;">
+                    <button class="btn-secondary" type="button" data-action="cancel-edit-camera">Cancel</button>
+                    <button class="btn" type="button" data-action="save-edit-camera">Save</button>
+                </div>
+            </div>
+        `;
+    }
+
+    async saveEditCamera() {
+        const id = Number(document.getElementById('edit-cam-id').value);
+        const body = {
+            name: document.getElementById('edit-cam-name').value.trim(),
+            host: document.getElementById('edit-cam-host').value.trim(),
+            port: Number(document.getElementById('edit-cam-port').value),
+            path: document.getElementById('edit-cam-path').value.trim(),
+        };
+        const password = document.getElementById('edit-cam-password').value;
+        if (password) body.password = password;
+
+        try {
+            await this.api('PUT', `/api/cameras/${id}`, body);
+            document.getElementById('edit-camera-dialog').style.display = 'none';
+            this.showToast('Camera updated', 'success');
+            await this.loadCameras();
+        } catch (e) {
+            this.showToast(`Update failed: ${e.message}`, 'error');
+        }
     }
 }
 

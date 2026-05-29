@@ -261,8 +261,44 @@ async def add_camera(cam: CameraAdd):
 async def remove_camera(camera_id: int):
     """Remove a camera and stop its stream."""
     stop_stream(str(camera_id))
-    # Note: actual DB delete not implemented to preserve history
-    return {"message": f"Camera {camera_id} stopped"}
+    if not db.delete_camera(camera_id):
+        raise HTTPException(404, "Camera not found")
+    return {"message": f"Camera {camera_id} deleted"}
+
+
+class CameraUpdate(BaseModel):
+    name: Optional[str] = None
+    host: Optional[str] = None
+    port: Optional[int] = None
+    path: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+
+@app.put("/api/cameras/{camera_id}")
+async def update_camera(camera_id: int, cam: CameraUpdate):
+    """Update camera settings."""
+    # Stop stream if connection details changed
+    if cam.host is not None or cam.port is not None or cam.path is not None:
+        stop_stream(str(camera_id))
+
+    db.update_camera(camera_id, name=cam.name, host=cam.host,
+                     port=cam.port, path=cam.path)
+
+    # Update credentials if provided
+    if cam.password:
+        # Get current or new host
+        cameras = db.get_cameras()
+        host = cam.host
+        if not host:
+            for c in cameras:
+                if c["id"] == camera_id:
+                    host = c["host"]
+                    break
+        if host:
+            creds.set(host, cam.username or "admin", cam.password)
+
+    return {"message": f"Camera {camera_id} updated"}
 
 
 # Streaming

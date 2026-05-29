@@ -98,6 +98,29 @@ class Database:
     def get_camera_by_host(self, host: str) -> Optional[dict]:
         row = self._conn.execute("SELECT * FROM cameras WHERE host = ?", (host,)).fetchone()
         return dict(row) if row else None
+
+    def update_camera(self, camera_id: int, name: str = None, host: str = None,
+                      port: int = None, path: str = None) -> bool:
+        fields, values = [], []
+        if name is not None:
+            fields.append("name = ?"); values.append(name)
+        if host is not None:
+            fields.append("host = ?"); values.append(host)
+        if port is not None:
+            fields.append("port = ?"); values.append(port)
+        if path is not None:
+            fields.append("path = ?"); values.append(path)
+        if not fields:
+            return False
+        values.append(camera_id)
+        self._conn.execute(f"UPDATE cameras SET {', '.join(fields)} WHERE id = ?", values)
+        self._conn.commit()
+        return self._conn.total_changes > 0
+
+    def delete_camera(self, camera_id: int) -> bool:
+        self._conn.execute("DELETE FROM cameras WHERE id = ?", (camera_id,))
+        self._conn.commit()
+        return self._conn.total_changes > 0
     
     # Detection events
     def log_detection(self, camera_id: int, detection_type: str, confidence: float = 0.0,

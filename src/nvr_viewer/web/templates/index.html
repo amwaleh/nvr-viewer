@@ -605,6 +605,21 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,.2);
+            border-top-color: #7c5cfc;
+            border-radius: 50%;
+            animation: spin .6s linear infinite;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
         @media (max-width: 1180px) {
             .camera-grid {
                 grid-template-columns: 1fr;
