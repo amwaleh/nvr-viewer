@@ -16,6 +16,9 @@ from pydantic import BaseModel
 from ..core.rtsp_client import RTSPClient, CameraConfig
 from ..core.decoder import H264Decoder
 from ..core.recorder import Recorder
+from ..detection.motion import MotionDetector
+from ..detection.detector import ObjectDetector, FaceDetector
+from ..detection.events import EventProcessor
 from ..storage.database import Database
 from ..storage.credentials import CredentialStore
 from ..network.scanner import NetworkScanner
@@ -40,6 +43,19 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 db = Database()
 creds = CredentialStore()
 scanner = NetworkScanner()
+
+# Detection engines (shared across streams)
+motion_detector_cache: dict[str, MotionDetector] = {}
+object_detector: Optional[ObjectDetector] = None
+face_detector: Optional[FaceDetector] = None
+event_processor = EventProcessor(db=db)
+
+# Detection settings
+detection_settings = {
+    "motion": True,
+    "objects": False,  # Heavy — user must enable explicitly
+    "faces": False,
+}
 
 # Active camera streams: {camera_id: {client, decoder, latest_frame, thread, stop_event}}
 active_streams: dict[str, dict] = {}
@@ -70,7 +86,9 @@ class CredentialSet(BaseModel):
 # --- Camera Stream Management ---
 
 def _stream_worker(camera_key: str, config: CameraConfig):
-    """Background thread that connects to camera and updates latest_frame."""
+    """Background thread that connects to camera, decodes, and runs detection."""
+    global object_detector, face_detector
+
     stream_info = active_streams.get(camera_key)
     if not stream_info:
         return
@@ -86,15 +104,74 @@ def _stream_worker(camera_key: str, config: CameraConfig):
     stream_info["client"] = client
     stop_event = stream_info["stop_event"]
 
+    # Per-camera motion detector (needs separate background model)
+    if camera_key not in motion_detector_cache:
+        motion_detector_cache[camera_key] = MotionDetector()
+    motion_det = motion_detector_cache[camera_key]
+
+    # Get camera DB id
+    cam_db = db.get_camera_by_host(config.host)
+    camera_id = cam_db["id"] if cam_db else 0
+    frame_skip = 0  # Run detection every 3rd frame to save CPU
+
     def on_frame(nal_data: bytes, is_first: bool):
+        nonlocal frame_skip
         frames = decoder.decode(nal_data)
         for frame in frames:
             stream_info["latest_frame"] = frame
             stream_info["frame_count"] = stream_info.get("frame_count", 0) + 1
+
             # Write to recorder if active
             rec = stream_info.get("recorder")
             if rec and rec.recording:
                 rec.write_frame(frame)
+
+            # Run detection every 3rd frame
+            frame_skip += 1
+            if frame_skip % 3 != 0:
+                continue
+
+            detections = []
+
+            # Motion detection (lightweight, always on if enabled)
+            if detection_settings.get("motion"):
+                try:
+                    motion_results = motion_det.detect(frame)
+                    detections.extend(motion_results)
+                except Exception as e:
+                    logger.debug(f"Motion detect error: {e}")
+
+            # Object detection (heavy, only if motion detected or always-on)
+            if detection_settings.get("objects") and (detections or frame_skip % 15 == 0):
+                try:
+                    global object_detector
+                    if object_detector is None:
+                        object_detector = ObjectDetector()
+                    obj_results = object_detector.detect(frame)
+                    detections.extend(obj_results)
+                except Exception as e:
+                    logger.debug(f"Object detect error: {e}")
+
+            # Face detection
+            if detection_settings.get("faces") and (detections or frame_skip % 15 == 0):
+                try:
+                    global face_detector
+                    if face_detector is None:
+                        face_detector = FaceDetector()
+                    face_results = face_detector.detect(frame)
+                    detections.extend(face_results)
+                except Exception as e:
+                    logger.debug(f"Face detect error: {e}")
+
+            # Process and log events (handles dedup, snapshots, DB)
+            if detections:
+                try:
+                    new_events = event_processor.process(
+                        camera_id, config.name, frame, detections)
+                    if new_events:
+                        stream_info["last_detections"] = new_events
+                except Exception as e:
+                    logger.debug(f"Event processing error: {e}")
 
     client.read_frames(on_frame, stop_event.is_set)
     decoder.close()
@@ -478,6 +555,7 @@ async def system_status():
             "status": info["status"],
             "frame_count": info.get("frame_count", 0),
             "recording": info.get("recorder") is not None and info["recorder"].recording if info.get("recorder") else False,
+            "last_detections": info.get("last_detections", []),
         }
 
     rec_count = len(list(RECORDINGS_DIR.glob("*.mp4"))) if RECORDINGS_DIR.exists() else 0
@@ -487,4 +565,31 @@ async def system_status():
         "streams_active": sum(1 for s in streams.values() if s["status"] == "streaming"),
         "recordings_count": rec_count,
         "streams": streams,
+        "detection": detection_settings,
     }
+
+
+# Detection settings
+class DetectionToggle(BaseModel):
+    motion: Optional[bool] = None
+    objects: Optional[bool] = None
+    faces: Optional[bool] = None
+
+
+@app.get("/api/detection")
+async def get_detection_settings():
+    """Get current detection settings."""
+    return detection_settings
+
+
+@app.post("/api/detection")
+async def set_detection_settings(toggle: DetectionToggle):
+    """Toggle detection features on/off."""
+    if toggle.motion is not None:
+        detection_settings["motion"] = toggle.motion
+    if toggle.objects is not None:
+        detection_settings["objects"] = toggle.objects
+    if toggle.faces is not None:
+        detection_settings["faces"] = toggle.faces
+    logger.info(f"Detection settings updated: {detection_settings}")
+    return {"message": "Detection settings updated", "settings": detection_settings}
