@@ -851,13 +851,38 @@
 
     <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-    <!-- Snapshot lightbox -->
-    <div id="snapshot-lightbox" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);align-items:center;justify-content:center;cursor:zoom-out;flex-direction:column;gap:12px;" onclick="this.style.display='none'">
+    <!-- Media lightbox (images + video clips) -->
+    <div id="snapshot-lightbox" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);align-items:center;justify-content:center;cursor:zoom-out;flex-direction:column;gap:12px;" onclick="if(event.target===this)window._closeLightbox()">
         <img id="snapshot-lightbox-img" src="" alt="Snapshot" style="max-width:92vw;max-height:82vh;border-radius:8px;box-shadow:0 4px 32px rgba(0,0,0,.6);object-fit:contain;">
+        <video id="snapshot-lightbox-video" src="" controls autoplay style="display:none;max-width:92vw;max-height:82vh;border-radius:8px;box-shadow:0 4px 32px rgba(0,0,0,.6);"></video>
         <div id="snapshot-lightbox-caption" style="color:#ccc;font-size:14px;text-align:center;max-width:90vw;"></div>
-        <div style="position:absolute;top:16px;right:24px;color:#fff;font-size:32px;cursor:pointer;line-height:1;" onclick="document.getElementById('snapshot-lightbox').style.display='none'">&times;</div>
+        <div style="position:absolute;top:16px;right:24px;color:#fff;font-size:32px;cursor:pointer;line-height:1;" onclick="window._closeLightbox()">&times;</div>
     </div>
 
+    <script>
+    window._closeLightbox = function() {
+        const lb = document.getElementById('snapshot-lightbox');
+        const vid = document.getElementById('snapshot-lightbox-video');
+        vid.pause(); vid.src = '';
+        lb.style.display = 'none';
+    };
+    window._openSnapshot = function(src, caption) {
+        const img = document.getElementById('snapshot-lightbox-img');
+        const vid = document.getElementById('snapshot-lightbox-video');
+        img.src = src; img.style.display = 'block';
+        vid.style.display = 'none'; vid.pause(); vid.src = '';
+        document.getElementById('snapshot-lightbox-caption').textContent = caption;
+        document.getElementById('snapshot-lightbox').style.display = 'flex';
+    };
+    window._openClip = function(clipUrl, caption) {
+        const img = document.getElementById('snapshot-lightbox-img');
+        const vid = document.getElementById('snapshot-lightbox-video');
+        img.style.display = 'none'; img.src = '';
+        vid.src = clipUrl; vid.style.display = 'block';
+        document.getElementById('snapshot-lightbox-caption').textContent = caption;
+        document.getElementById('snapshot-lightbox').style.display = 'flex';
+    };
+    </script>
     <script type="module" src="/static/app.js"></script>
 </body>
 </html>

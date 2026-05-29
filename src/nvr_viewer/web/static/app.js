@@ -382,9 +382,16 @@ class NVRApp {
             const confidence = Number(event.confidence ?? 0);
             const confidencePct = confidence <= 1 ? confidence * 100 : confidence;
             const captionText = `${event.detection_type} - ${event.label || ''} (${this.formatTime(event.timestamp)})`.replace(/'/g, "\\'");
-            const snapshotCell = event.snapshot_url
-                ? `<img src="${escapeHtml(event.snapshot_url)}" style="max-width:80px;max-height:60px;border-radius:4px;cursor:pointer;" loading="lazy" onclick="document.getElementById('snapshot-lightbox-img').src=this.src;document.getElementById('snapshot-lightbox-caption').textContent='${captionText}';document.getElementById('snapshot-lightbox').style.display='flex';">`
-                : '—';
+
+            let mediaCell = '—';
+            if (event.clip_url) {
+                mediaCell = `<div style="position:relative;display:inline-block;cursor:pointer" onclick="window._openClip('${escapeHtml(event.clip_url)}','${captionText}')">
+                    <img src="${escapeHtml(event.snapshot_url || '')}" style="max-width:80px;max-height:60px;border-radius:4px;" loading="lazy">
+                    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"><span style="background:rgba(0,0,0,.6);color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:14px;">&#9654;</span></div>
+                </div>`;
+            } else if (event.snapshot_url) {
+                mediaCell = `<img src="${escapeHtml(event.snapshot_url)}" style="max-width:80px;max-height:60px;border-radius:4px;cursor:pointer;" loading="lazy" onclick="window._openSnapshot(this.src,'${captionText}')">`;
+            }
 
             return `
                 <tr>
@@ -393,7 +400,7 @@ class NVRApp {
                     <td>${escapeHtml(event.label || '—')}</td>
                     <td>${Number.isFinite(confidencePct) ? `${confidencePct.toFixed(1)}%` : '—'}</td>
                     <td>${escapeHtml(camera?.name || event.camera_id || 'Unknown')}</td>
-                    <td>${snapshotCell}</td>
+                    <td>${mediaCell}</td>
                 </tr>
             `;
         }).join('');
@@ -669,4 +676,4 @@ class NVRApp {
 
 // Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', () => { window.app = new NVRApp(); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.getElementById('snapshot-lightbox').style.display = 'none'; });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window._closeLightbox(); });

@@ -64,6 +64,7 @@ stream_lock = threading.Lock()
 # Recordings directory
 RECORDINGS_DIR = Path.home() / ".nvr-viewer" / "recordings"
 SNAPSHOTS_DIR = Path.home() / ".nvr-viewer" / "snapshots"
+CLIPS_DIR = Path.home() / ".nvr-viewer" / "clips"
 
 
 # --- Pydantic Models ---
@@ -126,6 +127,9 @@ def _stream_worker(camera_key: str, config: CameraConfig):
             if rec and rec.recording:
                 rec.write_frame(frame)
 
+            # Feed pre-event buffer on every frame (lightweight)
+            event_processor.buffer_frame(camera_id, frame)
+
             # Run detection every 3rd frame
             frame_skip += 1
             if frame_skip % 3 != 0:
@@ -165,6 +169,7 @@ def _stream_worker(camera_key: str, config: CameraConfig):
 
             # Process and log events (handles dedup, snapshots, DB)
             if detections:
+                stream_info["active_detections"] = detections
                 try:
                     new_events = event_processor.process(
                         camera_id, config.name, frame, detections)
@@ -172,6 +177,8 @@ def _stream_worker(camera_key: str, config: CameraConfig):
                         stream_info["last_detections"] = new_events
                 except Exception as e:
                     logger.debug(f"Event processing error: {e}")
+            else:
+                stream_info["active_detections"] = []
 
     client.read_frames(on_frame, stop_event.is_set)
     decoder.close()
@@ -518,12 +525,14 @@ async def list_events(
     """Query detection events."""
     events = db.get_events(camera_id=camera_id, detection_type=detection_type,
                            since=since, limit=limit)
-    # Add web-accessible snapshot URL
+    # Add web-accessible snapshot and clip URLs
     for ev in events:
         sp = ev.get("snapshot_path")
         if sp:
-            fname = Path(sp).name
-            ev["snapshot_url"] = f"/api/snapshots/{fname}"
+            ev["snapshot_url"] = f"/api/snapshots/{Path(sp).name}"
+        meta = ev.get("metadata", "")
+        if meta and meta.endswith(".mp4"):
+            ev["clip_url"] = f"/api/clips/{Path(meta).name}"
     return events
 
 
@@ -532,8 +541,17 @@ async def get_snapshot(filename: str):
     """Serve a detection snapshot image."""
     file_path = SNAPSHOTS_DIR / filename
     if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(404, "Snapshot not found")
+       raise HTTPException(404, "Snapshot not found")
     return FileResponse(file_path, media_type="image/jpeg", filename=filename)
+
+
+@app.get("/api/clips/{filename}")
+async def get_clip(filename: str):
+    """Serve a detection video clip."""
+    file_path = CLIPS_DIR / filename
+    if not file_path.exists() or not file_path.is_file():
+       raise HTTPException(404, "Clip not found")
+    return FileResponse(file_path, media_type="video/mp4", filename=filename)
 
 
 # Credentials

@@ -102,16 +102,19 @@ class Database:
     # Detection events
     def log_detection(self, camera_id: int, detection_type: str, confidence: float = 0.0,
                       label: str = "", bbox: tuple = None, snapshot_path: str = "",
-                      metadata: dict = None) -> int:
+                      metadata = None) -> int:
         bbox_x, bbox_y, bbox_w, bbox_h = bbox if bbox else (0, 0, 0, 0)
+        if isinstance(metadata, dict):
+            meta_str = json.dumps(metadata)
+        else:
+            meta_str = str(metadata) if metadata else None
         cur = self._conn.execute(
             """INSERT INTO detection_events 
                (camera_id, timestamp, detection_type, confidence, label,
                 bbox_x, bbox_y, bbox_w, bbox_h, snapshot_path, metadata)
                VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (camera_id, detection_type, confidence, label,
-             bbox_x, bbox_y, bbox_w, bbox_h, snapshot_path,
-             json.dumps(metadata) if metadata else None))
+             bbox_x, bbox_y, bbox_w, bbox_h, snapshot_path, meta_str))
         self._conn.commit()
         return cur.lastrowid
     
