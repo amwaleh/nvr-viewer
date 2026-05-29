@@ -518,7 +518,22 @@ async def list_events(
     """Query detection events."""
     events = db.get_events(camera_id=camera_id, detection_type=detection_type,
                            since=since, limit=limit)
+    # Add web-accessible snapshot URL
+    for ev in events:
+        sp = ev.get("snapshot_path")
+        if sp:
+            fname = Path(sp).name
+            ev["snapshot_url"] = f"/api/snapshots/{fname}"
     return events
+
+
+@app.get("/api/snapshots/{filename}")
+async def get_snapshot(filename: str):
+    """Serve a detection snapshot image."""
+    file_path = SNAPSHOTS_DIR / filename
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(404, "Snapshot not found")
+    return FileResponse(file_path, media_type="image/jpeg", filename=filename)
 
 
 # Credentials

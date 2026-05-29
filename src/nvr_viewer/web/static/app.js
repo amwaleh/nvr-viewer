@@ -373,7 +373,7 @@ class NVRApp {
         if (!tbody) return;
 
         if (!events.length) {
-            tbody.innerHTML = '<tr><td colspan="5" class="empty-inline">No events match the current filter.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-inline">No events match the current filter.</td></tr>';
             return;
         }
 
@@ -381,6 +381,9 @@ class NVRApp {
             const camera = this.cameras.find((item) => item.id === event.camera_id);
             const confidence = Number(event.confidence ?? 0);
             const confidencePct = confidence <= 1 ? confidence * 100 : confidence;
+            const snapshotCell = event.snapshot_url
+                ? `<a href="${escapeHtml(event.snapshot_url)}" target="_blank"><img src="${escapeHtml(event.snapshot_url)}" style="max-width:80px;max-height:60px;border-radius:4px;cursor:pointer;" loading="lazy"></a>`
+                : '—';
 
             return `
                 <tr>
@@ -389,6 +392,7 @@ class NVRApp {
                     <td>${escapeHtml(event.label || '—')}</td>
                     <td>${Number.isFinite(confidencePct) ? `${confidencePct.toFixed(1)}%` : '—'}</td>
                     <td>${escapeHtml(camera?.name || event.camera_id || 'Unknown')}</td>
+                    <td>${snapshotCell}</td>
                 </tr>
             `;
         }).join('');
