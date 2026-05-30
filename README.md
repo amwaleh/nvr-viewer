@@ -76,30 +76,70 @@ Open **http://localhost:8080** in your browser.
 
 ### Running as a Service / Daemon
 
-Install NVR Viewer as a background service that starts automatically on boot:
+Once you've configured your cameras and detection settings through the web UI,
+install NVR Viewer as a background service so it runs 24/7 without a terminal window.
+
+#### Step 1 — Install the service
 
 ```powershell
-# Install as a service (auto-detects platform)
+# Uses your current Python environment and settings automatically
 nvr-viewer service install --port 8080
+```
 
-# Start / stop / check status
+This creates a platform-native service that auto-starts on boot:
+
+| Platform | What it creates | Config location |
+|----------|----------------|-----------------|
+| **Linux** | systemd unit at `/etc/systemd/system/nvr-viewer.service` | `sudo` required |
+| **Windows** | NSSM service (or Task Scheduler if NSSM unavailable) | Run as Administrator |
+| **macOS** | launchd agent at `~/Library/LaunchAgents/com.nvr-viewer.plist` | User-level |
+
+> **Windows note:** For best results, install [NSSM](https://nssm.cc/download) first (`winget install nssm`).
+> Without NSSM, the fallback Task Scheduler task runs at logon instead of boot.
+
+#### Step 2 — Start the service
+
+```powershell
 nvr-viewer service start
-nvr-viewer service stop
+```
+
+The web UI is now available at `http://<your-ip>:8080` — open it from any device on your network (phone, tablet, another PC).
+
+#### Step 3 — Verify it's running
+
+```powershell
 nvr-viewer service status
+```
 
-# View logs
+#### Managing the service
+
+```powershell
+# View recent logs
 nvr-viewer service logs
-nvr-viewer service logs -f          # follow (tail)
 
-# Remove the service
+# Follow logs in real-time (Ctrl+C to stop)
+nvr-viewer service logs -f
+
+# Stop the service
+nvr-viewer service stop
+
+# Remove the service entirely
 nvr-viewer service uninstall
 ```
 
-| Platform | Backend | Auto-start |
-|----------|---------|------------|
-| Linux | systemd unit | On boot |
-| Windows | NSSM service (or Task Scheduler fallback) | On boot / logon |
-| macOS | launchd agent | On logon |
+#### Platform-specific commands (alternative)
+
+```bash
+# Linux
+sudo systemctl status nvr-viewer
+sudo journalctl -u nvr-viewer -f
+
+# Windows (NSSM)
+nssm status nvr-viewer
+
+# macOS
+launchctl list com.nvr-viewer
+```
 
 ### CLI
 
