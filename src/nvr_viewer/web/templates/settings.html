@@ -211,11 +211,18 @@
                             <input type="text" id="telegram-chat-id" placeholder="-1001234567890">
                         </div>
                     </div>
-                    <p class="mt-2 text-xs text-slate-500">
-                        Create a bot via <a href="https://t.me/BotFather" target="_blank" class="text-sky-400 hover:underline">@BotFather</a>,
-                        then message the bot and get your Chat ID via
-                        <code class="rounded bg-slate-800 px-1">https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code>
-                    </p>
+                    <div class="mt-3 rounded-xl bg-slate-950/50 p-4 text-xs text-slate-400 leading-relaxed">
+                        <p class="mb-2 text-sm font-semibold text-slate-300">Setup Instructions</p>
+                        <ol class="list-decimal space-y-1.5 pl-4">
+                            <li>Open Telegram and search for <a href="https://t.me/BotFather" target="_blank" class="text-sky-400 hover:underline">@BotFather</a></li>
+                            <li>Send <code class="rounded bg-slate-800 px-1 text-emerald-400">/newbot</code> and follow the prompts to name your bot</li>
+                            <li>BotFather will reply with a <strong class="text-slate-200">Bot Token</strong> — copy and paste it above</li>
+                            <li>Open a chat with your new bot and send any message (e.g. "hello")</li>
+                            <li>Visit <code class="rounded bg-slate-800 px-1 text-sky-300 break-all">https://api.telegram.org/bot<span class="text-amber-400">&lt;TOKEN&gt;</span>/getUpdates</code> in your browser</li>
+                            <li>Find <code class="rounded bg-slate-800 px-1">"chat":{"id":<span class="text-emerald-400">123456789</span>}</code> in the JSON — that's your <strong class="text-slate-200">Chat ID</strong></li>
+                            <li>For group chats: add the bot to the group, send a message, then check getUpdates — the Chat ID will be negative (e.g. <code class="text-emerald-400">-1001234567890</code>)</li>
+                        </ol>
+                    </div>
                 </fieldset>
 
                 <!-- Event Triggers -->
