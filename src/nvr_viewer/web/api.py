@@ -64,6 +64,7 @@ def _load_settings() -> dict:
     """Load all app settings from disk."""
     defaults = {
         "detection": {"motion": True, "objects": True, "faces": True},
+        "camera_detection": {},  # per-camera overrides: {"1": {"motion": true, ...}}
         "storage_dir": DEFAULT_STORAGE_DIR,
     }
     # Try new unified settings file first
@@ -72,6 +73,8 @@ def _load_settings() -> dict:
             with open(SETTINGS_FILE, "r") as f:
                 saved = json.load(f)
             defaults["detection"].update(saved.get("detection", {}))
+            if "camera_detection" in saved:
+                defaults["camera_detection"] = saved["camera_detection"]
             if "storage_dir" in saved:
                 defaults["storage_dir"] = saved["storage_dir"]
         except Exception:
@@ -95,6 +98,7 @@ def _save_settings():
         with open(SETTINGS_FILE, "w") as f:
             json.dump({
                 "detection": detection_settings,
+                "camera_detection": camera_detection_settings,
                 "storage_dir": str(STORAGE_DIR),
             }, f, indent=2)
     except Exception as e:
@@ -103,6 +107,17 @@ def _save_settings():
 
 _settings = _load_settings()
 detection_settings = _settings["detection"]
+camera_detection_settings = _settings.get("camera_detection", {})
+
+
+def _cam_detection_enabled(camera_id: int, det_type: str) -> bool:
+    """Check if a detection type is enabled for a specific camera.
+    Per-camera settings override defaults."""
+    cam_key = str(camera_id)
+    if cam_key in camera_detection_settings:
+        return camera_detection_settings[cam_key].get(det_type,
+               detection_settings.get(det_type, True))
+    return detection_settings.get(det_type, True)
 STORAGE_DIR = Path(_settings["storage_dir"])
 
 # Derived storage paths
@@ -196,7 +211,7 @@ def _stream_worker(camera_key: str, config: CameraConfig):
             detections = []
 
             # Motion detection (lightweight, always on if enabled)
-            if detection_settings.get("motion"):
+            if _cam_detection_enabled(camera_id, "motion"):
                 try:
                     motion_results = motion_det.detect(frame)
                     detections.extend(motion_results)
@@ -204,7 +219,7 @@ def _stream_worker(camera_key: str, config: CameraConfig):
                     logger.debug(f"Motion detect error: {e}")
 
             # Object detection (heavy, only if motion detected or always-on)
-            if detection_settings.get("objects") and (detections or frame_skip % 15 == 0):
+            if _cam_detection_enabled(camera_id, "objects") and (detections or frame_skip % 15 == 0):
                 try:
                     global object_detector
                     if object_detector is None:
@@ -215,7 +230,7 @@ def _stream_worker(camera_key: str, config: CameraConfig):
                     logger.debug(f"Object detect error: {e}")
 
             # Face detection
-            if detection_settings.get("faces") and (detections or frame_skip % 15 == 0):
+            if _cam_detection_enabled(camera_id, "faces") and (detections or frame_skip % 15 == 0):
                 try:
                     global face_detector
                     if face_detector is None:
@@ -327,13 +342,13 @@ def _mjpeg_stream_worker(camera_key: str, stream_url: str):
                     # Run detection pipeline
                     detections = []
 
-                    if detection_settings.get("motion"):
+                    if _cam_detection_enabled(camera_id, "motion"):
                         try:
                             detections.extend(motion_det.detect(frame))
                         except Exception as e:
                             logger.debug(f"Motion detect error: {e}")
 
-                    if detection_settings.get("objects") and (detections or frame_skip % 15 == 0):
+                    if _cam_detection_enabled(camera_id, "objects") and (detections or frame_skip % 15 == 0):
                         try:
                             if object_detector is None:
                                 object_detector = ObjectDetector()
@@ -341,7 +356,7 @@ def _mjpeg_stream_worker(camera_key: str, stream_url: str):
                         except Exception as e:
                             logger.debug(f"Object detect error: {e}")
 
-                    if detection_settings.get("faces") and (detections or frame_skip % 15 == 0):
+                    if _cam_detection_enabled(camera_id, "faces") and (detections or frame_skip % 15 == 0):
                         try:
                             if face_detector is None:
                                 face_detector = FaceDetector()
@@ -896,13 +911,16 @@ class DetectionToggle(BaseModel):
 
 @app.get("/api/detection")
 async def get_detection_settings():
-    """Get current detection settings."""
-    return detection_settings
+    """Get default detection settings and all per-camera overrides."""
+    return {
+        "default": detection_settings,
+        "cameras": camera_detection_settings,
+    }
 
 
 @app.post("/api/detection")
 async def set_detection_settings(toggle: DetectionToggle):
-    """Toggle detection features on/off."""
+    """Update default detection settings."""
     if toggle.motion is not None:
         detection_settings["motion"] = toggle.motion
     if toggle.objects is not None:
@@ -910,8 +928,47 @@ async def set_detection_settings(toggle: DetectionToggle):
     if toggle.faces is not None:
         detection_settings["faces"] = toggle.faces
     _save_settings()
-    logger.info(f"Detection settings updated: {detection_settings}")
-    return {"message": "Detection settings updated", "settings": detection_settings}
+    logger.info(f"Default detection settings updated: {detection_settings}")
+    return {"message": "Detection settings updated", "default": detection_settings, "cameras": camera_detection_settings}
+
+
+@app.get("/api/detection/{camera_id}")
+async def get_camera_detection(camera_id: int):
+    """Get effective detection settings for a specific camera."""
+    cam_key = str(camera_id)
+    cam_settings = camera_detection_settings.get(cam_key, {})
+    effective = {
+        "motion": cam_settings.get("motion", detection_settings.get("motion", True)),
+        "objects": cam_settings.get("objects", detection_settings.get("objects", True)),
+        "faces": cam_settings.get("faces", detection_settings.get("faces", True)),
+    }
+    return {"camera_id": camera_id, "settings": effective, "is_custom": cam_key in camera_detection_settings}
+
+
+@app.post("/api/detection/{camera_id}")
+async def set_camera_detection(camera_id: int, toggle: DetectionToggle):
+    """Set per-camera detection overrides."""
+    cam_key = str(camera_id)
+    if cam_key not in camera_detection_settings:
+        camera_detection_settings[cam_key] = {}
+    if toggle.motion is not None:
+        camera_detection_settings[cam_key]["motion"] = toggle.motion
+    if toggle.objects is not None:
+        camera_detection_settings[cam_key]["objects"] = toggle.objects
+    if toggle.faces is not None:
+        camera_detection_settings[cam_key]["faces"] = toggle.faces
+    _save_settings()
+    logger.info(f"Camera {camera_id} detection: {camera_detection_settings[cam_key]}")
+    return {"message": f"Camera {camera_id} detection updated", "settings": camera_detection_settings[cam_key]}
+
+
+@app.delete("/api/detection/{camera_id}")
+async def reset_camera_detection(camera_id: int):
+    """Remove per-camera overrides, revert to defaults."""
+    cam_key = str(camera_id)
+    camera_detection_settings.pop(cam_key, None)
+    _save_settings()
+    return {"message": f"Camera {camera_id} reverted to default detection settings"}
 
 
 # Storage settings

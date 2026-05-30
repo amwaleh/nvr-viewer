@@ -84,6 +84,18 @@
             display: flex; align-items: center; justify-content: center;
             font-size: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.5);
         }
+        .event-photo-icon {
+            position: absolute; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; transition: opacity .2s; pointer-events: none;
+        }
+        .event-card:hover .event-photo-icon { opacity: 1; }
+        .event-photo-icon::after {
+            content: '📷'; background: rgba(0,0,0,.65); color: #fff;
+            border-radius: 50%; width: 36px; height: 36px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px;
+        }
         .event-type-badge {
             position: absolute; top: 8px; left: 8px;
             font-size: .65rem; font-weight: 700; text-transform: uppercase;
@@ -102,6 +114,7 @@
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .event-time { font-size: .68rem; color: #666; }
+        .event-filename { font-size: .62rem; color: #555; font-family: monospace; word-break: break-all; }
 
         /* Loading & empty */
         .loading {
@@ -293,17 +306,20 @@
             const thumb = ev.snapshot_url || '';
             const ts = ev.timestamp ? new Date(ev.timestamp.replace(' ','T') + 'Z').toLocaleString() : '';
 
+            const fname = thumb ? thumb.split('/').pop() : '';
+
             return `
             <div class="event-card" onclick="openLightbox(${i})" data-index="${i}">
                 <div class="event-thumb">
                     ${thumb ? `<img src="${escape(thumb)}" loading="lazy" alt="">` : '<div class="event-thumb-placeholder">No preview</div>'}
-                    ${hasClip ? '<div class="event-play-icon"></div>' : ''}
+                    ${hasClip ? '<div class="event-play-icon"></div>' : '<div class="event-photo-icon"></div>'}
                     <span class="event-type-badge" style="background:${color}">${escape(ev.detection_type)}</span>
                 </div>
                 <div class="event-info">
                     <span class="event-label">${escape(ev.label || ev.detection_type)}</span>
                     <span class="event-meta">${escape(getCameraName(ev.camera_id))} · ${pct.toFixed(0)}%</span>
                     <span class="event-time">${escape(ts)}</span>
+                    ${fname ? `<span class="event-filename">${escape(fname)}</span>` : ''}
                 </div>
             </div>`;
         }).join('')}</div>`;
@@ -363,7 +379,13 @@
 
         if (ev.clip_url) {
             img.style.display = 'none'; img.src = '';
-            vid.src = ev.clip_url; vid.style.display = 'block'; vid.play();
+            vid.src = ev.clip_url; vid.style.display = 'block';
+            vid.onerror = () => {
+                // Clip failed — fall back to snapshot
+                vid.style.display = 'none'; vid.src = '';
+                if (ev.snapshot_url) { img.src = ev.snapshot_url; img.style.display = 'block'; }
+            };
+            vid.play().catch(() => {});
         } else if (ev.snapshot_url) {
             vid.style.display = 'none'; vid.pause(); vid.src = '';
             img.src = ev.snapshot_url; img.style.display = 'block';

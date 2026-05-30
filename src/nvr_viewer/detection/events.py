@@ -30,6 +30,11 @@ class ClipRecorder:
         self._detections: list[dict] = []
 
         h, w = pre_frames[0].shape[:2] if pre_frames else (720, 1280)
+        # H.264 requires even dimensions
+        w = w & ~1
+        h = h & ~1
+        self._enc_width = w
+        self._enc_height = h
         self._container = av.open(output_path, mode="w")
         self._stream = self._container.add_stream("libx264", rate=int(fps))
         self._stream.width = w
@@ -87,13 +92,18 @@ class ClipRecorder:
             if not self._active:
                 return
             try:
+                h, w = frame.shape[:2]
+                # Resize to match encoder dimensions if needed
+                if w != self._enc_width or h != self._enc_height:
+                    frame = cv2.resize(frame, (self._enc_width, self._enc_height),
+                                       interpolation=cv2.INTER_AREA)
                 vf = av.VideoFrame.from_ndarray(frame, format="bgr24")
                 vf.pts = self._frame_count
                 for pkt in self._stream.encode(vf):
                     self._container.mux(pkt)
                 self._frame_count += 1
             except Exception as e:
-                logger.debug(f"Clip write error: {e}")
+                logger.warning(f"Clip write error: {e}")
 
     def finish(self):
         with self._lock:
@@ -105,7 +115,7 @@ class ClipRecorder:
                     self._container.mux(pkt)
                 self._container.close()
             except Exception as e:
-                logger.debug(f"Clip close error: {e}")
+                logger.warning(f"Clip close error: {e}")
             logger.info(f"Clip saved: {self.output_path} ({self._frame_count} frames)")
 
 
@@ -153,13 +163,14 @@ class EventProcessor:
         return 3
 
     def _downscale(self, frame: np.ndarray) -> np.ndarray:
-        """Downscale frame for buffer storage to save memory."""
+        """Downscale frame for buffer storage to save memory. Ensures even dimensions for H.264."""
         h, w = frame.shape[:2]
         if w <= self.buffer_max_width:
             return frame
         scale = self.buffer_max_width / w
-        return cv2.resize(frame, (self.buffer_max_width, int(h * scale)),
-                          interpolation=cv2.INTER_AREA)
+        new_w = self.buffer_max_width & ~1  # force even
+        new_h = int(h * scale) & ~1         # force even
+        return cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
     def buffer_frame(self, camera_id: int, frame: np.ndarray):
         """Add downscaled frame to rolling pre-event buffer with adaptive skip."""
@@ -247,12 +258,13 @@ class EventProcessor:
                 if det["type"] in ("object", "person", "vehicle", "animal", "face"):
                     base_cooldown = max(self.cooldown, 60)  # at least 60s for static types
                 if elapsed < base_cooldown:
+                    logger.debug(f"Cooldown skip {key} ({elapsed:.0f}s < {base_cooldown}s)")
                     continue
 
             # Suppress stationary objects (parked cars, furniture, etc.)
             if det["type"] in ("object", "person", "vehicle", "animal", "face"):
                 if self._is_stationary(key, det["bbox"]):
-                    logger.debug(f"Suppressed stationary {det.get('label', det['type'])} on {camera_name}")
+                    logger.info(f"Suppressed stationary {det.get('label', det['type'])} on {camera_name}")
                     continue
 
             self._last_events[key] = now

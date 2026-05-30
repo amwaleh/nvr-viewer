@@ -319,8 +319,13 @@ class NVRApp {
             const state = this.getCameraState(camera);
             const enabled = this.feedState.get(camera.id) !== false;
             const streamAction = enabled ? 'stop-feed' : 'start-feed';
-            const streamLabel = enabled ? 'Stop' : 'Start';
-            const recordLabel = state.recording ? '● Recording' : 'Record';
+
+            // Per-camera detection indicators
+            const camDet = (this._cameraDetectionSettings || {})[String(camera.id)] || {};
+            const defDet = this._defaultDetection || detection_defaults();
+            const motionOn = camDet.motion ?? defDet.motion ?? true;
+            const objectsOn = camDet.objects ?? defDet.objects ?? true;
+            const facesOn = camDet.faces ?? defDet.faces ?? true;
 
             return `
                 <article class="camera-card" data-camera-card="${camera.id}" draggable="true" data-drag-id="${camera.id}">
@@ -334,7 +339,12 @@ class NVRApp {
                                 <span>${escapeHtml(camera.host)}:${escapeHtml(camera.port)}${escapeHtml(camera.path)}</span>
                             </div>
                         </div>
-                        <div style="display:flex;align-items:center;gap:8px;">
+                        <div style="display:flex;align-items:center;gap:6px;">
+                            <div class="det-indicators" title="Active detections">
+                                ${motionOn ? '<span class="det-ind on">🏃</span>' : '<span class="det-ind off">🏃</span>'}
+                                ${objectsOn ? '<span class="det-ind on">🚗</span>' : '<span class="det-ind off">🚗</span>'}
+                                ${facesOn ? '<span class="det-ind on">😶</span>' : '<span class="det-ind off">😶</span>'}
+                            </div>
                             ${enabled ? `<button class="btn-ghost focus-btn" type="button" onclick="window._openCameraFocus(${camera.id},'${escapeHtml(camera.name).replace(/'/g, "\\'")}')" title="Enlarge">
                                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4"/></svg>
                             </button>` : ''}
@@ -347,12 +357,20 @@ class NVRApp {
                     <div class="camera-card-footer">
                         <div class="camera-meta">
                             <strong data-role="frame-count">${state.frameCount.toLocaleString()} frames</strong>
-                            <span data-role="recording-label">${state.recording ? 'Recording in progress' : 'Idle'}</span>
+                            <span data-role="recording-label">${state.recording ? '● REC' : 'Idle'}</span>
                         </div>
                         <div class="camera-actions">
-                            <button class="${state.recording ? 'btn-danger btn-recording' : 'btn-secondary'}" type="button" data-action="toggle-recording" data-id="${camera.id}" data-role="record-button">${recordLabel}</button>
-                            <button class="btn-ghost" type="button" data-action="snapshot-camera" data-id="${camera.id}">Snapshot</button>
-                            <button class="btn" type="button" data-action="${streamAction}" data-id="${camera.id}" data-role="stream-button">${streamLabel}</button>
+                            <button class="${state.recording ? 'icon-btn recording' : 'icon-btn'}" type="button" data-action="toggle-recording" data-id="${camera.id}" data-role="record-button" title="${state.recording ? 'Stop recording' : 'Start recording'}">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="${state.recording ? '#ef4444' : 'currentColor'}"><circle cx="8" cy="8" r="6"/></svg>
+                            </button>
+                            <button class="icon-btn" type="button" data-action="snapshot-camera" data-id="${camera.id}" title="Take snapshot">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="14" height="11" rx="2"/><circle cx="8" cy="9" r="3"/><path d="M5 3l1-2h4l1 2"/></svg>
+                            </button>
+                            <button class="icon-btn" type="button" data-action="${streamAction}" data-id="${camera.id}" data-role="stream-button" title="${enabled ? 'Stop stream' : 'Start stream'}">
+                                ${enabled
+                                    ? '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>'
+                                    : '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg>'}
+                            </button>
                         </div>
                     </div>
                 </article>
@@ -427,6 +445,14 @@ class NVRApp {
                 ? escapeHtml(camera.stream_url || `${camera.host}:${camera.port}`)
                 : `${escapeHtml(camera.host)}:${escapeHtml(camera.port)}${escapeHtml(camera.path)}`;
 
+            const camDetection = this._cameraDetectionSettings || {};
+            const camDet = camDetection[String(camera.id)] || {};
+            const defDet = this._defaultDetection || detection_defaults();
+            const motionOn = camDet.motion ?? defDet.motion ?? true;
+            const objectsOn = camDet.objects ?? defDet.objects ?? true;
+            const facesOn = camDet.faces ?? defDet.faces ?? true;
+            const isCustom = String(camera.id) in camDetection;
+
             return `
                 <div class="list-card" data-camera-list-item="${camera.id}" style="position:relative;">
                     <div class="list-card-row">
@@ -439,6 +465,21 @@ class NVRApp {
                     <div class="action-row">
                         <button class="btn" type="button" data-action="connect-camera" data-id="${camera.id}" data-role="connect-button" ${enabled ? 'disabled' : ''}>Connect</button>
                         <button class="btn-secondary" type="button" data-action="disconnect-camera" data-id="${camera.id}" data-role="disconnect-button" ${enabled ? '' : 'disabled'}>Disconnect</button>
+                    </div>
+                    <div class="cam-detection-row">
+                        <label class="cam-det-toggle" title="Motion detection">
+                            <input type="checkbox" ${motionOn ? 'checked' : ''} onchange="window._nvrApp.saveCameraDetection(${camera.id},'motion',this.checked)">
+                            <span>🏃</span>
+                        </label>
+                        <label class="cam-det-toggle" title="Object detection">
+                            <input type="checkbox" ${objectsOn ? 'checked' : ''} onchange="window._nvrApp.saveCameraDetection(${camera.id},'objects',this.checked)">
+                            <span>🚗</span>
+                        </label>
+                        <label class="cam-det-toggle" title="Face detection">
+                            <input type="checkbox" ${facesOn ? 'checked' : ''} onchange="window._nvrApp.saveCameraDetection(${camera.id},'faces',this.checked)">
+                            <span>😶</span>
+                        </label>
+                        ${isCustom ? `<button class="btn-ghost" style="font-size:.65rem;padding:1px 4px;opacity:.5;" onclick="window._nvrApp.resetCameraDetection(${camera.id})" title="Reset to defaults">↺</button>` : ''}
                     </div>
                     <div style="position:absolute;bottom:8px;right:8px;display:flex;gap:6px;">
                         <button class="btn-ghost" type="button" data-action="edit-camera" data-id="${camera.id}" title="Edit" style="font-size:14px;padding:2px 6px;opacity:.6;">&#9998;</button>
@@ -626,11 +667,6 @@ class NVRApp {
             this.loadEvents(event.target.value);
         });
 
-        // Detection toggle checkboxes
-        ['det-motion', 'det-objects', 'det-faces'].forEach(id => {
-            document.getElementById(id)?.addEventListener('change', () => this.saveDetectionSettings());
-        });
-
         // Camera type toggle (RTSP vs MJPEG)
         document.getElementById('camera-type')?.addEventListener('change', (e) => {
             const isMjpeg = e.target.value === 'mjpeg';
@@ -783,31 +819,32 @@ class NVRApp {
     // --- Detection Settings ---
     async loadDetectionSettings() {
         try {
-            const settings = await this.api('GET', '/api/detection');
-            document.getElementById('det-motion').checked = !!settings.motion;
-            document.getElementById('det-objects').checked = !!settings.objects;
-            document.getElementById('det-faces').checked = !!settings.faces;
+            const data = await this.api('GET', '/api/detection');
+            const settings = data.default || data;
+            this._cameraDetectionSettings = data.cameras || {};
+            this._defaultDetection = settings;
         } catch (e) {
             console.error('Failed to load detection settings', e);
         }
     }
 
-    async saveDetectionSettings() {
-        const body = {
-            motion: document.getElementById('det-motion').checked,
-            objects: document.getElementById('det-objects').checked,
-            faces: document.getElementById('det-faces').checked,
-        };
-        const statusEl = document.getElementById('detection-status');
+    async saveCameraDetection(cameraId, type, enabled) {
         try {
-            await this.api('POST', '/api/detection', body);
-            if (statusEl) {
-                statusEl.textContent = '✓ Settings saved';
-                statusEl.className = 'detection-status saved';
-                setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'detection-status'; }, 2000);
-            }
+            await this.api('POST', `/api/detection/${cameraId}`, { [type]: enabled });
+            this.showToast(`Camera ${cameraId} ${type} ${enabled ? 'enabled' : 'disabled'}`, 'info');
         } catch (e) {
-            this.showToast(`Failed to update detection: ${e.message}`, 'error');
+            this.showToast(`Failed to update: ${e.message}`, 'error');
+        }
+    }
+
+    async resetCameraDetection(cameraId) {
+        try {
+            await this.api('DELETE', `/api/detection/${cameraId}`);
+            this.showToast(`Camera ${cameraId} reset to defaults`, 'info');
+            this.loadDetectionSettings();
+            this.loadCameras();
+        } catch (e) {
+            this.showToast(`Failed to reset: ${e.message}`, 'error');
         }
     }
 
@@ -948,14 +985,18 @@ class NVRApp {
                     badge.textContent = state.status;
                 }
                 if (frameCount) frameCount.textContent = `${state.frameCount.toLocaleString()} frames`;
-                if (recordingLabel) recordingLabel.textContent = state.recording ? 'Recording in progress' : 'Idle';
+                if (recordingLabel) recordingLabel.textContent = state.recording ? '● REC' : 'Idle';
                 if (recordButton) {
-                    recordButton.textContent = state.recording ? '● Recording' : 'Record';
-                    recordButton.className = state.recording ? 'btn-danger btn-recording' : 'btn-secondary';
+                    recordButton.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" fill="${state.recording ? '#ef4444' : 'currentColor'}"><circle cx="8" cy="8" r="6"/></svg>`;
+                    recordButton.className = state.recording ? 'icon-btn recording' : 'icon-btn';
+                    recordButton.title = state.recording ? 'Stop recording' : 'Start recording';
                 }
                 if (streamButton) {
                     streamButton.dataset.action = enabled ? 'stop-feed' : 'start-feed';
-                    streamButton.textContent = enabled ? 'Stop' : 'Start';
+                    streamButton.innerHTML = enabled
+                        ? '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>'
+                        : '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg>';
+                    streamButton.title = enabled ? 'Stop stream' : 'Start stream';
                 }
             }
 
@@ -1039,5 +1080,6 @@ class NVRApp {
 }
 
 // Initialize on DOM ready
-document.addEventListener('DOMContentLoaded', () => { window.app = new NVRApp(); });
+function detection_defaults() { return { motion: true, objects: true, faces: true }; }
+document.addEventListener('DOMContentLoaded', () => { window.app = new NVRApp(); window._nvrApp = window.app; });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') window._closeLightbox(); });
