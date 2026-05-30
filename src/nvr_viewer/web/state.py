@@ -48,6 +48,7 @@ def _load_settings() -> dict:
     defaults = {
         "detection": {"motion": True, "objects": True, "faces": True},
         "camera_detection": {},
+        "continuous_recording": {},
         "storage_dir": DEFAULT_STORAGE_DIR,
         "min_free_percent": 30,
     }
@@ -58,6 +59,8 @@ def _load_settings() -> dict:
             defaults["detection"].update(saved.get("detection", {}))
             if "camera_detection" in saved:
                 defaults["camera_detection"] = saved["camera_detection"]
+            if "continuous_recording" in saved:
+                defaults["continuous_recording"] = saved["continuous_recording"]
             if "storage_dir" in saved:
                 defaults["storage_dir"] = saved["storage_dir"]
             if "min_free_percent" in saved:
@@ -78,6 +81,7 @@ def _load_settings() -> dict:
 _settings = _load_settings()
 detection_settings: dict = _settings["detection"]
 camera_detection_settings: dict = _settings.get("camera_detection", {})
+continuous_recording_settings: dict = _settings.get("continuous_recording", {})
 
 # --- Storage paths (mutable — can be updated at runtime) ---
 STORAGE_DIR = Path(_settings["storage_dir"])
@@ -109,6 +113,7 @@ def save_settings():
             json.dump({
                 "detection": detection_settings,
                 "camera_detection": camera_detection_settings,
+                "continuous_recording": continuous_recording_settings,
                 "storage_dir": str(STORAGE_DIR),
                 "min_free_percent": min_free_percent,
             }, f, indent=2)

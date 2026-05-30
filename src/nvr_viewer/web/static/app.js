@@ -26,8 +26,8 @@ class NVRApp {
         this.cameraPage = 0;
         this.camerasPerPage = 4;
         this.setupEventListeners();
-        // Load detection settings first so camera cards render with correct indicators
-        await this.loadDetectionSettings();
+        // Load detection + continuous recording settings first so camera cards render with correct indicators
+        await Promise.all([this.loadDetectionSettings(), this.loadContinuousRecording()]);
         await Promise.all([
             this.loadCameras(),
             this.loadRecordings(),
@@ -335,6 +335,7 @@ class NVRApp {
             const objectsOn = camDet.objects ?? defDet.objects ?? true;
             const facesOn = camDet.faces ?? defDet.faces ?? true;
             const isCustom = String(camera.id) in (this._cameraDetectionSettings || {});
+            const contRec = (this._continuousRecording || {})[String(camera.id)] || false;
 
             return `
                 <article class="camera-card" data-camera-card="${camera.id}" draggable="true" data-drag-id="${camera.id}">
@@ -344,10 +345,11 @@ class NVRApp {
                         </span>
                         <span style="width:8px;height:8px;border-radius:50%;background:${enabled ? '#4ade80' : '#f87171'};flex-shrink:0;" title="${enabled ? 'Streaming' : 'Stopped'}"></span>
                         <strong style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(camera.host)}:${escapeHtml(camera.port)}${escapeHtml(camera.path)}">${escapeHtml(camera.name)}</strong>
-                        <div class="det-indicators" title="Click to toggle detections" style="gap:3px;margin:0 auto;">
-                            <span class="det-ind ${motionOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'motion',${!motionOn})" title="Motion: click to toggle">🏃</span>
-                            <span class="det-ind ${objectsOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'objects',${!objectsOn})" title="Objects: click to toggle">🚗</span>
-                            <span class="det-ind ${facesOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'faces',${!facesOn})" title="Faces: click to toggle">😶</span>
+                        <div class="det-indicators" title="Click to toggle" style="gap:3px;margin:0 auto;">
+                            <span class="det-ind ${contRec ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.toggleContinuousRecording(${camera.id})" title="Continuous recording: click to toggle">⏺</span>
+                            <span class="det-ind ${motionOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'motion',${!motionOn})" title="Motion detection: click to toggle">🏃</span>
+                            <span class="det-ind ${objectsOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'objects',${!objectsOn})" title="Object detection: click to toggle">🚗</span>
+                            <span class="det-ind ${facesOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'faces',${!facesOn})" title="Face detection: click to toggle">😶</span>
                             ${isCustom ? `<span style="font-size:.6rem;opacity:.4;cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.resetCameraDetection(${camera.id})" title="Reset to defaults">↺</span>` : ''}
                         </div>
                         ${enabled ? `<button class="btn-ghost focus-btn" type="button" onclick="window._openCameraFocus(${camera.id},'${escapeHtml(camera.name).replace(/'/g, "\\'")}')" title="Enlarge" style="flex-shrink:0;">
@@ -815,7 +817,6 @@ class NVRApp {
     async resetCameraDetection(cameraId) {
         try {
             await this.api('DELETE', `/api/detection/${cameraId}`);
-            // Remove local override so it falls back to defaults
             const camKey = String(cameraId);
             if (this._cameraDetectionSettings) delete this._cameraDetectionSettings[camKey];
             this.renderCameraGrid();
@@ -825,6 +826,33 @@ class NVRApp {
             this.showToast(`${camName} reset to defaults`, 'info');
         } catch (e) {
             this.showToast(`Failed to reset: ${e.message}`, 'error');
+        }
+    }
+
+    // --- Continuous Recording ---
+    async loadContinuousRecording() {
+        try {
+            this._continuousRecording = await this.api('GET', '/api/continuous-recording');
+        } catch (e) {
+            this._continuousRecording = {};
+            console.error('Failed to load continuous recording settings', e);
+        }
+    }
+
+    async toggleContinuousRecording(cameraId) {
+        const camKey = String(cameraId);
+        const current = (this._continuousRecording || {})[camKey] || false;
+        const newVal = !current;
+        try {
+            await this.api('POST', `/api/continuous-recording/${cameraId}`, { enabled: newVal });
+            if (!this._continuousRecording) this._continuousRecording = {};
+            this._continuousRecording[camKey] = newVal;
+            this.renderCameraGrid();
+            const cam = this.cameras.find(c => c.id === cameraId);
+            const camName = cam ? cam.name : `Camera ${cameraId}`;
+            this.showToast(`${camName} continuous recording ${newVal ? 'enabled' : 'disabled'}`, 'info');
+        } catch (e) {
+            this.showToast(`Failed to update: ${e.message}`, 'error');
         }
     }
 

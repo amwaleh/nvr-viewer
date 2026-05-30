@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from ..state import (detection_settings, camera_detection_settings,
-                     save_settings)
+                     continuous_recording_settings, save_settings)
 
 logger = logging.getLogger(__name__)
 
@@ -82,3 +82,26 @@ async def reset_camera_detection(camera_id: int):
     camera_detection_settings.pop(cam_key, None)
     save_settings()
     return {"message": f"Camera {camera_id} reverted to default detection settings"}
+
+
+# --- Continuous Recording ---
+
+@router.get("/continuous-recording")
+async def get_continuous_recording():
+    """Get continuous recording settings for all cameras."""
+    return continuous_recording_settings
+
+
+class ContinuousRecordingToggle(BaseModel):
+    enabled: bool
+
+
+@router.post("/continuous-recording/{camera_id}")
+async def set_continuous_recording(camera_id: int, toggle: ContinuousRecordingToggle):
+    """Enable/disable continuous recording for a camera."""
+    cam_key = str(camera_id)
+    continuous_recording_settings[cam_key] = toggle.enabled
+    save_settings()
+    logger.info("Camera %d continuous recording: %s", camera_id, toggle.enabled)
+    return {"message": f"Camera {camera_id} continuous recording {'enabled' if toggle.enabled else 'disabled'}",
+            "camera_id": camera_id, "enabled": toggle.enabled}
