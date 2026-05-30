@@ -348,10 +348,11 @@ class NVRApp {
                             </div>
                         </div>
                         <div style="display:flex;align-items:center;gap:6px;">
-                            <div class="det-indicators" title="Active detections">
-                                ${motionOn ? '<span class="det-ind on">🏃</span>' : '<span class="det-ind off">🏃</span>'}
-                                ${objectsOn ? '<span class="det-ind on">🚗</span>' : '<span class="det-ind off">🚗</span>'}
-                                ${facesOn ? '<span class="det-ind on">😶</span>' : '<span class="det-ind off">😶</span>'}
+                            <div class="det-indicators" title="Click to toggle detections" style="gap:3px;">
+                                <span class="det-ind ${motionOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'motion',${!motionOn})" title="Motion: click to toggle">🏃</span>
+                                <span class="det-ind ${objectsOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'objects',${!objectsOn})" title="Objects: click to toggle">🚗</span>
+                                <span class="det-ind ${facesOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'faces',${!facesOn})" title="Faces: click to toggle">😶</span>
+                                ${isCustom ? `<span style="font-size:.6rem;opacity:.4;cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.resetCameraDetection(${camera.id})" title="Reset to defaults">↺</span>` : ''}
                             </div>
                             <span class="status-badge ${this.getStatusClass(state.status)}" data-role="status-badge">${escapeHtml(state.status)}</span>
                             ${enabled ? `<button class="btn-ghost focus-btn" type="button" onclick="window._openCameraFocus(${camera.id},'${escapeHtml(camera.name).replace(/'/g, "\\'")}')" title="Enlarge">
@@ -485,14 +486,6 @@ class NVRApp {
                             <button class="icon-btn" type="button" data-action="edit-camera" data-id="${camera.id}" title="Edit" style="opacity:.5;font-size:13px;">✎</button>
                             <button class="icon-btn" type="button" data-action="delete-camera" data-id="${camera.id}" title="Delete" style="opacity:.5;color:#e74c3c;font-size:13px;">🗑</button>
                         </div>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:4px;">
-                        <div class="det-indicators" title="Active detections" style="gap:3px;">
-                            <span class="det-ind ${motionOn ? 'on' : 'off'}" style="cursor:pointer;font-size:.65rem;padding:1px 5px;" onclick="window._nvrApp.saveCameraDetection(${camera.id},'motion',${!motionOn})" title="Motion: click to toggle">🏃</span>
-                            <span class="det-ind ${objectsOn ? 'on' : 'off'}" style="cursor:pointer;font-size:.65rem;padding:1px 5px;" onclick="window._nvrApp.saveCameraDetection(${camera.id},'objects',${!objectsOn})" title="Objects: click to toggle">🚗</span>
-                            <span class="det-ind ${facesOn ? 'on' : 'off'}" style="cursor:pointer;font-size:.65rem;padding:1px 5px;" onclick="window._nvrApp.saveCameraDetection(${camera.id},'faces',${!facesOn})" title="Faces: click to toggle">😶</span>
-                        </div>
-                        ${isCustom ? `<span style="font-size:.6rem;opacity:.4;cursor:pointer;" onclick="window._nvrApp.resetCameraDetection(${camera.id})" title="Reset to defaults">↺</span>` : ''}
                     </div>
                 </div>
             `;
