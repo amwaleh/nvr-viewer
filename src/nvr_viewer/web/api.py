@@ -4,6 +4,7 @@ Thin orchestrator: sets up the app, CORS, static files, frontend pages,
 and includes all API routers. Business logic lives in routers/ and streaming.py.
 """
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -12,10 +13,64 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from .routers import cameras, recordings, events, detection, settings, system, notifications, service, timeline
+from .state import db, creds, continuous_recording_settings, active_streams
+from .streaming import start_stream
+from ..core.rtsp_client import CameraConfig
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="NVR Viewer API", version="0.2.0")
+
+def _auto_start_continuous_cameras():
+    """Start streams for all cameras with continuous recording enabled."""
+    enabled_ids = [k for k, v in continuous_recording_settings.items() if v]
+    if not enabled_ids:
+        return
+
+    all_cameras = db.get_cameras()
+    cam_map = {str(c["id"]): c for c in all_cameras}
+
+    for cam_id_str in enabled_ids:
+        cam = cam_map.get(cam_id_str)
+        if not cam:
+            logger.warning("Continuous recording enabled for unknown camera %s", cam_id_str)
+            continue
+
+        key = cam_id_str
+        if key in active_streams and active_streams[key].get("status") == "streaming":
+            continue  # Already running
+
+        cam_type = cam.get("type", "rtsp")
+        try:
+            if cam_type == "mjpeg":
+                stream_url = cam.get("stream_url", "")
+                if not stream_url:
+                    stream_url = f"http://{cam['host']}:{cam['port']}/0/stream"
+                start_stream(key, camera_type="mjpeg", stream_url=stream_url,
+                             camera_name=cam["name"], camera_host=cam["host"])
+            else:
+                stored_cred = creds.get(cam["host"])
+                config = CameraConfig(
+                    host=cam["host"], port=cam["port"],
+                    path=cam.get("path", "/onvif1"),
+                    username=stored_cred["username"] if stored_cred else "admin",
+                    password=stored_cred["password"] if stored_cred else "",
+                    name=cam["name"])
+                start_stream(key, config=config)
+
+            logger.info("Auto-started continuous recording stream: %s (%s)",
+                        cam["name"], cam["host"])
+        except Exception as e:
+            logger.error("Failed to auto-start camera %s: %s", cam["name"], e)
+
+
+@asynccontextmanager
+async def lifespan(app):
+    """Startup/shutdown lifecycle for the app."""
+    _auto_start_continuous_cameras()
+    yield
+
+
+app = FastAPI(title="NVR Viewer API", version="0.2.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
