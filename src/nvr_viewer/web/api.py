@@ -865,6 +865,31 @@ async def list_events(
     return {"events": events, "total": total, "limit": limit, "offset": offset}
 
 
+@app.delete("/api/events")
+async def delete_events(ids: list[int]):
+    """Delete detection events by IDs and their associated files."""
+    if not ids:
+        raise HTTPException(400, "No event IDs provided")
+    # Fetch events to find files to delete
+    events = db.get_events_by_ids(ids)
+    deleted_files = 0
+    for ev in events:
+        sp = ev.get("snapshot_path")
+        if sp:
+            p = Path(sp)
+            if p.exists():
+                p.unlink()
+                deleted_files += 1
+        meta = ev.get("metadata", "")
+        if meta and meta.endswith(".mp4"):
+            p = Path(meta)
+            if p.exists():
+                p.unlink()
+                deleted_files += 1
+    count = db.delete_events(ids)
+    return {"deleted": count, "files_removed": deleted_files}
+
+
 @app.get("/api/snapshots/{filepath:path}")
 async def get_snapshot(filepath: str):
     """Serve a detection snapshot image."""

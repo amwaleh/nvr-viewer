@@ -184,6 +184,24 @@ class Database:
             query += " AND timestamp >= ?"
             params.append(since)
         return self._conn.execute(query, params).fetchone()[0]
+
+    def get_events_by_ids(self, ids: list[int]) -> list[dict]:
+        if not ids:
+            return []
+        placeholders = ",".join("?" for _ in ids)
+        rows = self._conn.execute(
+            f"SELECT * FROM detection_events WHERE id IN ({placeholders})", ids
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_events(self, ids: list[int]) -> int:
+        if not ids:
+            return 0
+        placeholders = ",".join("?" for _ in ids)
+        cur = self._conn.execute(
+            f"DELETE FROM detection_events WHERE id IN ({placeholders})", ids)
+        self._conn.commit()
+        return cur.rowcount
     
     # Recordings
     def log_recording(self, camera_id: int, file_path: str, trigger: str = "manual") -> int:

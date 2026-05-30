@@ -42,6 +42,9 @@
         }
         .btn-sm:hover { background: #3a3a3a; }
         .btn-sm.active { background: #4caf50; color: #fff; border-color: #4caf50; }
+        .btn-sm.danger { background: #c0392b; border-color: #e74c3c; color: #fff; }
+        .btn-sm.danger:hover { background: #e74c3c; }
+        .btn-sm.danger:disabled { opacity: .4; cursor: not-allowed; }
 
         /* Grid */
         .events-grid {
@@ -115,6 +118,11 @@
         }
         .event-time { font-size: .68rem; color: #666; }
         .event-filename { font-size: .62rem; color: #555; font-family: monospace; word-break: break-all; }
+        .event-select {
+            position: absolute; top: 8px; right: 8px; z-index: 2;
+            width: 20px; height: 20px; accent-color: #4caf50; cursor: pointer;
+        }
+        .event-card.selected { border-color: #4caf50; box-shadow: 0 0 0 2px rgba(76,175,80,.3); }
 
         /* Loading & empty */
         .loading {
@@ -213,6 +221,8 @@
             </select>
         </div>
         <button class="btn-sm" id="btn-refresh" onclick="loadEvents()">↻ Refresh</button>
+        <button class="btn-sm" id="btn-select-all" onclick="selectAll()" style="display:none;">Select All</button>
+        <button class="btn-sm danger" id="btn-delete" onclick="deleteSelected()" style="display:none;" disabled>🗑 Delete (0)</button>
     </div>
 
     <div id="events-container">
@@ -239,6 +249,8 @@
     let currentPage = 1;
     let totalEvents = 0;
     let perPage = 24;
+    let selectMode = false;
+    let selectedIds = new Set();
 
     function getPerPage() {
         return parseInt(document.getElementById('filter-limit').value) || 24;
@@ -309,8 +321,9 @@
             const fname = thumb ? thumb.split('/').pop() : '';
 
             return `
-            <div class="event-card" onclick="openLightbox(${i})" data-index="${i}">
+            <div class="event-card ${selectedIds.has(ev.id) ? 'selected' : ''}" onclick="onCardClick(event, ${i})" data-index="${i}" data-id="${ev.id}">
                 <div class="event-thumb">
+                    <input type="checkbox" class="event-select" ${selectedIds.has(ev.id) ? 'checked' : ''} onclick="onCheckbox(event, ${ev.id})" data-event-id="${ev.id}">
                     ${thumb ? `<img src="${escape(thumb)}" loading="lazy" alt="">` : '<div class="event-thumb-placeholder">No preview</div>'}
                     ${hasClip ? '<div class="event-play-icon"></div>' : '<div class="event-photo-icon"></div>'}
                     <span class="event-type-badge" style="background:${color}">${escape(ev.detection_type)}</span>
@@ -422,6 +435,67 @@
     ['filter-type', 'filter-camera', 'filter-limit'].forEach(id => {
         document.getElementById(id).addEventListener('change', () => loadEvents(1));
     });
+
+    // Select mode & multi-delete
+    function onCardClick(event, index) {
+        // If clicking the checkbox area, let onCheckbox handle it
+        if (event.target.classList.contains('event-select')) return;
+        openLightbox(index);
+    }
+
+    function onCheckbox(event, id) {
+        event.stopPropagation();
+        if (selectedIds.has(id)) selectedIds.delete(id);
+        else selectedIds.add(id);
+        updateSelectUI();
+        const card = document.querySelector(`.event-card[data-id="${id}"]`);
+        if (card) card.classList.toggle('selected', selectedIds.has(id));
+    }
+
+    function toggleSelectMode() {
+        // No longer needed — checkboxes always visible
+    }
+
+    function selectAll() {
+        if (selectedIds.size === allEvents.length) {
+            selectedIds.clear();
+        } else {
+            allEvents.forEach(ev => selectedIds.add(ev.id));
+        }
+        updateSelectUI();
+        renderGrid();
+    }
+
+    function updateSelectUI() {
+        const count = selectedIds.size;
+        document.getElementById('btn-select-all').style.display = count > 0 || allEvents.length > 0 ? '' : 'none';
+        document.getElementById('btn-delete').style.display = count > 0 ? '' : 'none';
+        const delBtn = document.getElementById('btn-delete');
+        delBtn.textContent = `🗑 Delete (${count})`;
+        delBtn.disabled = count === 0;
+        const selAllBtn = document.getElementById('btn-select-all');
+        selAllBtn.textContent = selectedIds.size === allEvents.length ? 'Deselect All' : 'Select All';
+    }
+
+    async function deleteSelected() {
+        const count = selectedIds.size;
+        if (!count) return;
+        if (!confirm(`Delete ${count} event${count > 1 ? 's' : ''} and their files? This cannot be undone.`)) return;
+        try {
+            const resp = await fetch('/api/events', {
+                method: 'DELETE',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify([...selectedIds]),
+            });
+            if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
+            const result = await resp.json();
+            selectedIds.clear();
+            updateSelectUI();
+            loadEvents();
+        } catch(e) {
+            alert(`Delete failed: ${e.message}`);
+        }
+    }
 
     // Init
     loadCameras().then(() => loadEvents(1));
