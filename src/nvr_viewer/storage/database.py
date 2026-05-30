@@ -74,6 +74,12 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_events_time ON detection_events(timestamp);
         """)
         self._conn.commit()
+
+    def execute(self, sql: str, params=()) -> list[dict]:
+        """Execute a raw SQL query and return results as list of dicts."""
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
     
     # Camera CRUD
     def add_camera(self, name: str, host: str, port: int = 554, path: str = "/onvif1",
@@ -225,6 +231,38 @@ class Database:
                 "UPDATE recordings SET end_time = datetime('now'), file_size = ? WHERE id = ?",
                 (file_size, recording_id))
             self._conn.commit()
+
+    def get_recording_dates(self, camera_id: int) -> list[str]:
+        """Get distinct dates that have recordings for a camera."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT DISTINCT date(start_time) as d FROM recordings WHERE camera_id = ? ORDER BY d DESC",
+                (camera_id,)).fetchall()
+            return [r["d"] for r in rows if r["d"]]
+
+    def get_recordings_for_date(self, camera_id: int, date_str: str) -> list[dict]:
+        """Get all recordings for a camera on a specific date."""
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT id, camera_id, start_time, end_time, file_path, file_size, trigger
+                   FROM recordings
+                   WHERE camera_id = ? AND date(start_time) = ?
+                   ORDER BY start_time ASC""",
+                (camera_id, date_str)).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_all_recordings(self, camera_id: int = None) -> list[dict]:
+        """Get all recordings, optionally filtered by camera."""
+        with self._lock:
+            if camera_id:
+                rows = self._conn.execute(
+                    """SELECT id, camera_id, start_time, end_time, file_path, file_size, trigger
+                       FROM recordings ORDER BY start_time DESC""").fetchall()
+                return [dict(r) for r in rows if r["camera_id"] == camera_id]
+            rows = self._conn.execute(
+                "SELECT id, camera_id, start_time, end_time, file_path, file_size, trigger FROM recordings ORDER BY start_time DESC"
+            ).fetchall()
+            return [dict(r) for r in rows]
     
     def close(self):
         if self._conn:

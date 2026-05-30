@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import cameras, recordings, events, detection, settings, system, notifications, service
+from .routers import cameras, recordings, events, detection, settings, system, notifications, service, timeline
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,15 @@ async def settings_page():
     raise HTTPException(404, "Settings page not found")
 
 
+@app.get("/timeline")
+async def timeline_page():
+    """Serve the timeline playback page."""
+    timeline_path = TEMPLATES_DIR / "timeline.html"
+    if timeline_path.exists():
+        return FileResponse(timeline_path, media_type="text/html")
+    raise HTTPException(404, "Timeline page not found")
+
+
 # --- Static files ---
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -69,3 +78,4 @@ app.include_router(settings.router)
 app.include_router(system.router)
 app.include_router(notifications.router)
 app.include_router(service.router)
+app.include_router(timeline.router)

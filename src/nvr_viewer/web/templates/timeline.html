@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NVR Viewer — Timeline</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+    tailwind.config = {
+        darkMode: 'class',
+        theme: {
+            extend: {
+                colors: {
+                    nvr: {
+                        bg: '#1a1a2e',
+                        card: '#16213e',
+                        accent: '#0f3460',
+                        highlight: '#e94560',
+                        border: '#2a2a4a',
+                    },
+                },
+            },
+        },
+    };
+    </script>
+    <style>
+        :root { --text-muted: #94a3b8; }
+
+        .timeline-bar {
+            display: flex;
+            height: 40px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .timeline-hour {
+            flex: 1;
+            position: relative;
+            border-right: 1px solid rgba(255,255,255,0.05);
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .timeline-hour:last-child { border-right: none; }
+        .timeline-hour:hover { background: rgba(255,255,255,0.08); }
+        .timeline-hour.has-data { background: rgba(74, 222, 128, 0.25); }
+        .timeline-hour.has-data:hover { background: rgba(74, 222, 128, 0.4); }
+        .timeline-hour.selected { background: rgba(74, 222, 128, 0.5); box-shadow: inset 0 0 0 2px #4ade80; }
+        .timeline-hour .hour-label {
+            position: absolute;
+            bottom: -18px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.6rem;
+            color: var(--text-muted);
+        }
+        .timeline-hour .hour-label.major {
+            font-size: 0.7rem;
+            color: #cbd5e1;
+        }
+
+        .date-chip {
+            padding: 0.35rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(30,41,59,0.5);
+            color: #94a3b8;
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .date-chip:hover { border-color: rgba(74,222,128,0.3); color: #e2e8f0; }
+        .date-chip.active {
+            background: rgba(74,222,128,0.2);
+            border-color: rgba(74,222,128,0.5);
+            color: #4ade80;
+        }
+
+        .segment-item {
+            padding: 0.5rem 0.75rem;
+            border-radius: 8px;
+            background: rgba(30,41,59,0.4);
+            border: 1px solid rgba(255,255,255,0.06);
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .segment-item:hover { border-color: rgba(74,222,128,0.3); background: rgba(30,41,59,0.7); }
+        .segment-item.playing { border-color: #4ade80; background: rgba(74,222,128,0.1); }
+    </style>
+</head>
+<body class="min-h-screen bg-nvr-bg text-slate-100 antialiased dark">
+    <div class="flex min-h-screen flex-col">
+        <!-- Header -->
+        <header class="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-nvr-border bg-nvr-accent/30 p-4 backdrop-blur-sm md:px-6">
+            <div class="flex items-center gap-3">
+                <a href="/" class="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-sky-500/90 to-nvr-accent text-sm font-bold tracking-[0.18em] text-white shadow-lg hover:opacity-80">NV</a>
+                <div>
+                    <h1 class="text-xl font-semibold tracking-tight text-white">Timeline</h1>
+                    <p class="text-sm text-slate-400">Browse and replay continuous recordings</p>
+                </div>
+            </div>
+            <nav class="flex items-center gap-3 text-sm">
+                <a href="/" class="text-slate-400 hover:text-white">Dashboard</a>
+                <a href="/events" class="text-slate-400 hover:text-white">Events</a>
+                <a href="/settings" class="text-slate-400 hover:text-white">Settings</a>
+            </nav>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-1 p-4 md:p-6">
+            <!-- Camera Selector -->
+            <div class="mb-6 flex flex-wrap items-center gap-4">
+                <label class="text-sm font-medium text-slate-300">Camera</label>
+                <select id="camera-select" class="rounded-lg border border-nvr-border bg-nvr-card px-4 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" onchange="loadDates()">
+                    <option value="">Select a camera…</option>
+                </select>
+                <span id="recording-count" class="text-xs text-slate-500"></span>
+            </div>
+
+            <!-- Date Chips -->
+            <div id="dates-section" class="mb-6 hidden">
+                <h3 class="mb-2 text-xs font-medium uppercase tracking-widest text-slate-500">Available Dates</h3>
+                <div id="dates-container" class="flex flex-wrap gap-2"></div>
+            </div>
+
+            <!-- Timeline Bar -->
+            <div id="timeline-section" class="mb-6 hidden">
+                <h3 class="mb-2 text-xs font-medium uppercase tracking-widest text-slate-500">24-Hour Timeline</h3>
+                <div class="timeline-bar" id="timeline-bar"></div>
+                <div class="relative h-5" id="timeline-labels"></div>
+            </div>
+
+            <!-- Player + Segments -->
+            <div id="player-section" class="hidden grid gap-6 lg:grid-cols-3">
+                <!-- Video Player -->
+                <div class="lg:col-span-2">
+                    <div class="overflow-hidden rounded-xl border border-nvr-border bg-nvr-card">
+                        <div id="player-placeholder" class="flex aspect-video items-center justify-center bg-slate-900/50">
+                            <p class="text-sm text-slate-500">Select a segment to play</p>
+                        </div>
+                        <video id="video-player" class="hidden aspect-video w-full bg-black" controls></video>
+                        <div class="flex items-center justify-between border-t border-nvr-border px-4 py-2">
+                            <div>
+                                <span id="now-playing" class="text-sm text-slate-400">No segment selected</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="playPrev()" class="rounded-lg border border-nvr-border bg-nvr-card px-3 py-1 text-xs text-slate-400 hover:text-white" title="Previous">⏮ Prev</button>
+                                <button onclick="playNext()" class="rounded-lg border border-nvr-border bg-nvr-card px-3 py-1 text-xs text-slate-400 hover:text-white" title="Next">Next ⏭</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Segment List -->
+                <div>
+                    <h3 class="mb-2 text-xs font-medium uppercase tracking-widest text-slate-500">Segments <span id="segment-hour-label"></span></h3>
+                    <div id="segments-list" class="flex max-h-[60vh] flex-col gap-2 overflow-y-auto pr-1"></div>
+                </div>
+            </div>
+
+            <!-- Empty State -->
+            <div id="empty-state" class="mt-20 text-center">
+                <p class="text-5xl">📹</p>
+                <p class="mt-4 text-lg text-slate-400">Select a camera to browse recordings</p>
+                <p class="mt-1 text-sm text-slate-500">Enable continuous recording on camera cards to start building a timeline</p>
+            </div>
+        </main>
+    </div>
+
+    <script>
+    let allSegments = [];
+    let currentSegmentIndex = -1;
+    let currentHour = null;
+
+    async function api(method, url) {
+        const res = await fetch(url, { method });
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        return res.json();
+    }
+
+    // Load cameras into selector
+    async function loadCameras() {
+        try {
+            const cameras = await api('GET', '/api/cameras');
+            const select = document.getElementById('camera-select');
+            cameras.forEach(cam => {
+                const opt = document.createElement('option');
+                opt.value = cam.id;
+                opt.textContent = cam.name;
+                select.appendChild(opt);
+            });
+
+            // Check URL params
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('camera')) {
+                select.value = params.get('camera');
+                loadDates();
+            }
+        } catch (e) {
+            console.error('Failed to load cameras', e);
+        }
+    }
+
+    // Load dates for selected camera
+    async function loadDates() {
+        const cameraId = document.getElementById('camera-select').value;
+        const datesSection = document.getElementById('dates-section');
+        const timelineSection = document.getElementById('timeline-section');
+        const playerSection = document.getElementById('player-section');
+        const emptyState = document.getElementById('empty-state');
+
+        if (!cameraId) {
+            datesSection.classList.add('hidden');
+            timelineSection.classList.add('hidden');
+            playerSection.classList.add('hidden');
+            emptyState.classList.remove('hidden');
+            return;
+        }
+
+        try {
+            const dates = await api('GET', `/api/timeline/${cameraId}/dates`);
+            const container = document.getElementById('dates-container');
+
+            if (dates.length === 0) {
+                container.innerHTML = '<span class="text-sm text-slate-500">No recordings found for this camera</span>';
+                datesSection.classList.remove('hidden');
+                timelineSection.classList.add('hidden');
+                playerSection.classList.add('hidden');
+                emptyState.classList.add('hidden');
+                return;
+            }
+
+            container.innerHTML = dates.map(d => {
+                const label = formatDate(d);
+                return `<button class="date-chip" onclick="selectDate('${d}')" data-date="${d}">${label}</button>`;
+            }).join('');
+
+            datesSection.classList.remove('hidden');
+            emptyState.classList.add('hidden');
+            document.getElementById('recording-count').textContent = `${dates.length} day${dates.length !== 1 ? 's' : ''} of recordings`;
+
+            // Auto-select most recent date
+            selectDate(dates[0]);
+        } catch (e) {
+            console.error('Failed to load dates', e);
+        }
+    }
+
+    // Select a date and load timeline
+    async function selectDate(dateStr) {
+        // Update active chip
+        document.querySelectorAll('.date-chip').forEach(c => c.classList.toggle('active', c.dataset.date === dateStr));
+
+        const cameraId = document.getElementById('camera-select').value;
+        try {
+            const data = await api('GET', `/api/timeline/${cameraId}/segments?date=${dateStr}`);
+            renderTimeline(data.hours);
+            document.getElementById('timeline-section').classList.remove('hidden');
+            document.getElementById('player-section').classList.remove('hidden');
+
+            // Flatten all segments for playback
+            allSegments = [];
+            Object.entries(data.hours).sort(([a],[b]) => a.localeCompare(b)).forEach(([h, segs]) => {
+                segs.forEach(s => { s._hour = h; allSegments.push(s); });
+            });
+
+            // Auto-select first hour with data
+            const firstHour = Object.keys(data.hours).sort()[0];
+            if (firstHour !== undefined) {
+                selectHour(firstHour, data.hours[firstHour]);
+            } else {
+                document.getElementById('segments-list').innerHTML = '<p class="text-sm text-slate-500">No segments for this date</p>';
+            }
+        } catch (e) {
+            console.error('Failed to load segments', e);
+        }
+    }
+
+    // Render 24-hour timeline bar
+    function renderTimeline(hours) {
+        const bar = document.getElementById('timeline-bar');
+        const labels = document.getElementById('timeline-labels');
+
+        let barHtml = '';
+        let labelHtml = '';
+        for (let h = 0; h < 24; h++) {
+            const hStr = String(h).padStart(2, '0');
+            const hasData = hours[hStr] && hours[hStr].length > 0;
+            const count = hasData ? hours[hStr].length : 0;
+            barHtml += `<div class="timeline-hour ${hasData ? 'has-data' : ''}"
+                data-hour="${hStr}"
+                onclick="selectHourFromBar('${hStr}')"
+                title="${hStr}:00 — ${count} segment${count !== 1 ? 's' : ''}">
+            </div>`;
+            // Show labels every 3 hours
+            const isMajor = h % 3 === 0;
+            if (isMajor) {
+                const left = (h / 24 * 100) + (100/48);
+                labelHtml += `<span class="hour-label ${isMajor ? 'major' : ''}" style="position:absolute;left:${left}%;">${hStr}:00</span>`;
+            }
+        }
+        bar.innerHTML = barHtml;
+        labels.innerHTML = labelHtml;
+    }
+
+    let _currentHours = {};
+    function selectHourFromBar(hStr) {
+        const cameraId = document.getElementById('camera-select').value;
+        const dateChip = document.querySelector('.date-chip.active');
+        if (!dateChip) return;
+        // Re-fetch segments to get the data
+        api('GET', `/api/timeline/${cameraId}/segments?date=${dateChip.dataset.date}`).then(data => {
+            _currentHours = data.hours;
+            const segs = data.hours[hStr] || [];
+            selectHour(hStr, segs);
+        });
+    }
+
+    // Select hour and show segments
+    function selectHour(hStr, segments) {
+        currentHour = hStr;
+        // Highlight timeline bar
+        document.querySelectorAll('.timeline-hour').forEach(el => {
+            el.classList.toggle('selected', el.dataset.hour === hStr);
+        });
+
+        document.getElementById('segment-hour-label').textContent = `(${hStr}:00 – ${hStr}:59)`;
+
+        const list = document.getElementById('segments-list');
+        if (!segments || segments.length === 0) {
+            list.innerHTML = '<p class="text-sm text-slate-500 py-4">No recordings this hour</p>';
+            return;
+        }
+
+        list.innerHTML = segments.map((seg, i) => {
+            const time = (seg.start_time || '').substring(11, 19) || '??:??:??';
+            const size = seg.file_size ? formatSize(seg.file_size) : '—';
+            const trigger = seg.trigger || 'manual';
+            const triggerBadge = trigger === 'manual'
+                ? '<span class="rounded bg-sky-500/20 px-1.5 py-0.5 text-[0.6rem] text-sky-400">manual</span>'
+                : trigger === 'motion'
+                    ? '<span class="rounded bg-amber-500/20 px-1.5 py-0.5 text-[0.6rem] text-amber-400">motion</span>'
+                    : trigger === 'continuous'
+                        ? '<span class="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[0.6rem] text-emerald-400">continuous</span>'
+                        : `<span class="rounded bg-slate-500/20 px-1.5 py-0.5 text-[0.6rem] text-slate-400">${trigger}</span>`;
+            const globalIdx = allSegments.findIndex(s => s.file_path === seg.file_path);
+            return `<div class="segment-item" data-idx="${globalIdx}" onclick="playSegment(${globalIdx})">
+                <span style="color:#4ade80;font-size:1.1rem;">▶</span>
+                <div class="flex-1">
+                    <div class="text-sm font-medium">${time}</div>
+                    <div class="flex items-center gap-2 text-xs text-slate-500">${size} ${triggerBadge}</div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    // Play a segment
+    function playSegment(idx) {
+        if (idx < 0 || idx >= allSegments.length) return;
+        currentSegmentIndex = idx;
+        const seg = allSegments[idx];
+
+        const player = document.getElementById('video-player');
+        const placeholder = document.getElementById('player-placeholder');
+        const nowPlaying = document.getElementById('now-playing');
+
+        placeholder.classList.add('hidden');
+        player.classList.remove('hidden');
+        player.src = seg.playback_url;
+        player.play();
+
+        const time = (seg.start_time || '').substring(11, 19) || '';
+        nowPlaying.textContent = `Playing: ${time} — ${seg.filename}`;
+
+        // Auto-play next on end
+        player.onended = () => playNext();
+
+        // Highlight in list
+        document.querySelectorAll('.segment-item').forEach(el => {
+            el.classList.toggle('playing', parseInt(el.dataset.idx) === idx);
+        });
+    }
+
+    function playPrev() {
+        if (currentSegmentIndex > 0) playSegment(currentSegmentIndex - 1);
+    }
+
+    function playNext() {
+        if (currentSegmentIndex < allSegments.length - 1) playSegment(currentSegmentIndex + 1);
+    }
+
+    // Helpers
+    function formatDate(dateStr) {
+        const d = new Date(dateStr + 'T00:00:00');
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+
+        if (d.toDateString() === today.toDateString()) return 'Today';
+        if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+        return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+
+    function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+        return (bytes / 1073741824).toFixed(1) + ' GB';
+    }
+
+    // Init
+    loadCameras();
+    </script>
+</body>
+</html>
