@@ -210,12 +210,20 @@ class NVRApp {
     }
 
     async loadRecordings() {
+        const container = document.getElementById('recordings-list');
+        const btn = document.getElementById('refresh-recordings-btn');
+        if (container) {
+            container.innerHTML = '<div style="display:flex;align-items:center;gap:12px;padding:20px;justify-content:center;color:#aaa;"><div class="spinner" style="width:24px;height:24px;"></div><span>Loading recordings...</span></div>';
+        }
+        if (btn) btn.disabled = true;
         try {
             const files = await this.api('GET', '/api/recordings');
             this.renderRecordings(files);
             this.updateRefreshTime();
         } catch (error) {
             this.showToast(`Failed to load recordings: ${error.message}`, 'error');
+        } finally {
+            if (btn) btn.disabled = false;
         }
     }
 
