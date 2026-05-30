@@ -1,6 +1,7 @@
 """FastAPI backend for NVR Viewer web interface."""
 import asyncio
 import cv2
+import json
 import numpy as np
 import logging
 import time
@@ -49,23 +50,76 @@ scanner = NetworkScanner()
 motion_detector_cache: dict[str, MotionDetector] = {}
 object_detector: Optional[ObjectDetector] = None
 face_detector: Optional[FaceDetector] = None
-event_processor = EventProcessor(db=db)
+event_processor = None  # Initialized after settings load
 
-# Detection settings
-detection_settings = {
-    "motion": True,
-    "objects": True,  # Heavy — user must enable explicitly
-    "faces": True,
-}
+# App settings — persisted to disk
+CONFIG_DIR = Path.home() / ".nvr-viewer"
+SETTINGS_FILE = CONFIG_DIR / "settings.json"
+
+# Default storage is the current working directory
+DEFAULT_STORAGE_DIR = str(Path.cwd())
+
+
+def _load_settings() -> dict:
+    """Load all app settings from disk."""
+    defaults = {
+        "detection": {"motion": True, "objects": True, "faces": True},
+        "storage_dir": DEFAULT_STORAGE_DIR,
+    }
+    # Try new unified settings file first
+    if SETTINGS_FILE.exists():
+        try:
+            with open(SETTINGS_FILE, "r") as f:
+                saved = json.load(f)
+            defaults["detection"].update(saved.get("detection", {}))
+            if "storage_dir" in saved:
+                defaults["storage_dir"] = saved["storage_dir"]
+        except Exception:
+            pass
+    else:
+        # Migrate from old detection_settings.json
+        old_file = CONFIG_DIR / "detection_settings.json"
+        if old_file.exists():
+            try:
+                with open(old_file, "r") as f:
+                    defaults["detection"].update(json.load(f))
+            except Exception:
+                pass
+    return defaults
+
+
+def _save_settings():
+    """Persist all settings to disk."""
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump({
+                "detection": detection_settings,
+                "storage_dir": str(STORAGE_DIR),
+            }, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Failed to save settings: {e}")
+
+
+_settings = _load_settings()
+detection_settings = _settings["detection"]
+STORAGE_DIR = Path(_settings["storage_dir"])
+
+# Derived storage paths
+RECORDINGS_DIR = STORAGE_DIR / "recordings"
+SNAPSHOTS_DIR = STORAGE_DIR / "snapshots"
+CLIPS_DIR = STORAGE_DIR / "clips"
+
+# Ensure dirs exist
+for d in [RECORDINGS_DIR, SNAPSHOTS_DIR, CLIPS_DIR]:
+    d.mkdir(parents=True, exist_ok=True)
+
+# Initialize event processor with configured storage paths
+event_processor = EventProcessor(db=db, snapshot_dir=SNAPSHOTS_DIR, clips_dir=CLIPS_DIR)
 
 # Active camera streams: {camera_id: {client, decoder, latest_frame, thread, stop_event}}
 active_streams: dict[str, dict] = {}
 stream_lock = threading.Lock()
-
-# Recordings directory
-RECORDINGS_DIR = Path.home() / ".nvr-viewer" / "recordings"
-SNAPSHOTS_DIR = Path.home() / ".nvr-viewer" / "snapshots"
-CLIPS_DIR = Path.home() / ".nvr-viewer" / "clips"
 
 
 # --- Pydantic Models ---
@@ -132,9 +186,8 @@ def _stream_worker(camera_key: str, config: CameraConfig):
 
             frame_skip += 1
 
-            # Feed pre-event buffer every 3rd frame (not every frame)
-            if frame_skip % 3 == 0:
-                event_processor.buffer_frame(camera_id, frame)
+            # Feed pre-event buffer (EventProcessor handles adaptive skip)
+            event_processor.buffer_frame(camera_id, frame)
 
             # Run detection every 5th frame to reduce CPU load
             if frame_skip % 5 != 0:
@@ -192,7 +245,7 @@ def _stream_worker(camera_key: str, config: CameraConfig):
 
 
 def _mjpeg_stream_worker(camera_key: str, stream_url: str):
-    """Background thread that reads MJPEG over HTTP and runs detection."""
+    """Background thread that reads MJPEG over HTTP using raw parsing for low latency."""
     global object_detector, face_detector
 
     stream_info = active_streams.get(camera_key)
@@ -212,77 +265,103 @@ def _mjpeg_stream_worker(camera_key: str, stream_url: str):
     frame_skip = 0
 
     try:
-        cap = cv2.VideoCapture(stream_url)
-        if not cap.isOpened():
-            logger.error(f"MJPEG connect failed: {stream_url}")
-            stream_info["status"] = "error"
-            return
+        # Raw HTTP connection — avoids OpenCV's buffering overhead
+        req = urllib.request.Request(stream_url)
+        resp = urllib.request.urlopen(req, timeout=10)
+
+        # Read MJPEG boundary from content-type header
+        content_type = resp.headers.get("Content-Type", "")
+        boundary = b"--"
+        if "boundary=" in content_type:
+            boundary = b"--" + content_type.split("boundary=")[1].strip().encode()
 
         stream_info["status"] = "streaming"
-        logger.info(f"MJPEG stream connected: {stream_url}")
+        logger.info(f"MJPEG stream connected (raw): {stream_url}")
 
+        buf = b""
         while not stop_event.is_set():
-            ret, frame = cap.read()
-            if not ret:
-                time.sleep(0.5)
+            chunk = resp.read(4096)
+            if not chunk:
+                time.sleep(0.1)
                 continue
+            buf += chunk
 
-            stream_info["latest_frame"] = frame
-            stream_info["frame_count"] = stream_info.get("frame_count", 0) + 1
-            frame_skip += 1
+            # Find JPEG frame boundaries (SOI=FFD8, EOI=FFD9)
+            while True:
+                soi = buf.find(b"\xff\xd8")
+                if soi == -1:
+                    buf = buf[-2:]  # keep potential partial marker
+                    break
+                eoi = buf.find(b"\xff\xd9", soi + 2)
+                if eoi == -1:
+                    break  # incomplete frame, read more
 
-            # Write to recorder if active
-            rec = stream_info.get("recorder")
-            if rec and rec.recording:
-                rec.write_frame(frame)
+                # Extract complete JPEG frame
+                jpeg_bytes = buf[soi:eoi + 2]
+                buf = buf[eoi + 2:]
 
-            # Feed pre-event buffer every 3rd frame
-            if frame_skip % 3 == 0:
-                event_processor.buffer_frame(camera_id, frame)
+                frame_skip += 1
+                stream_info["frame_count"] = stream_info.get("frame_count", 0) + 1
 
-            # Detection every 5th frame
-            if frame_skip % 5 != 0:
-                continue
+                # Store raw JPEG bytes for passthrough to browser (no re-encode!)
+                stream_info["latest_jpeg"] = jpeg_bytes
 
-            detections = []
+                # Decode every 3rd frame for clip buffer, every 5th for detection
+                run_detection = (frame_skip % 5 == 0)
+                if frame_skip % 3 == 0 or run_detection:
+                    frame = cv2.imdecode(
+                        np.frombuffer(jpeg_bytes, dtype=np.uint8),
+                        cv2.IMREAD_COLOR
+                    )
+                    if frame is None:
+                        continue
 
-            if detection_settings.get("motion"):
-                try:
-                    detections.extend(motion_det.detect(frame))
-                except Exception as e:
-                    logger.debug(f"Motion detect error: {e}")
+                    stream_info["latest_frame"] = frame
 
-            if detection_settings.get("objects") and (detections or frame_skip % 15 == 0):
-                try:
-                    global object_detector
-                    if object_detector is None:
-                        object_detector = ObjectDetector()
-                    detections.extend(object_detector.detect(frame))
-                except Exception as e:
-                    logger.debug(f"Object detect error: {e}")
+                    # Feed pre-event buffer
+                    event_processor.buffer_frame(camera_id, frame)
 
-            if detection_settings.get("faces") and (detections or frame_skip % 15 == 0):
-                try:
-                    global face_detector
-                    if face_detector is None:
-                        face_detector = FaceDetector()
-                    detections.extend(face_detector.detect(frame))
-                except Exception as e:
-                    logger.debug(f"Face detect error: {e}")
+                    if not run_detection:
+                        continue
 
-            if detections:
-                stream_info["active_detections"] = detections
-                try:
-                    new_events = event_processor.process(
-                        camera_id, camera_name, frame, detections)
-                    if new_events:
-                        stream_info["last_detections"] = new_events
-                except Exception as e:
-                    logger.debug(f"Event processing error: {e}")
-            else:
-                stream_info["active_detections"] = []
+                    # Run detection pipeline
+                    detections = []
 
-        cap.release()
+                    if detection_settings.get("motion"):
+                        try:
+                            detections.extend(motion_det.detect(frame))
+                        except Exception as e:
+                            logger.debug(f"Motion detect error: {e}")
+
+                    if detection_settings.get("objects") and (detections or frame_skip % 15 == 0):
+                        try:
+                            if object_detector is None:
+                                object_detector = ObjectDetector()
+                            detections.extend(object_detector.detect(frame))
+                        except Exception as e:
+                            logger.debug(f"Object detect error: {e}")
+
+                    if detection_settings.get("faces") and (detections or frame_skip % 15 == 0):
+                        try:
+                            if face_detector is None:
+                                face_detector = FaceDetector()
+                            detections.extend(face_detector.detect(frame))
+                        except Exception as e:
+                            logger.debug(f"Face detect error: {e}")
+
+                    if detections:
+                        stream_info["active_detections"] = detections
+                        try:
+                            new_events = event_processor.process(
+                                camera_id, camera_name, frame, detections)
+                            if new_events:
+                                stream_info["last_detections"] = new_events
+                        except Exception as e:
+                            logger.debug(f"Event processing error: {e}")
+                    else:
+                        stream_info["active_detections"] = []
+
+        resp.close()
     except Exception as e:
         logger.error(f"MJPEG stream error: {e}")
 
@@ -467,27 +546,37 @@ async def stream_camera(camera_id: int):
 
     def mjpeg_generator():
         last_frame_id = -1
+        is_mjpeg = cam.get("type") == "mjpeg"
         while True:
             stream = active_streams.get(key)
             if not stream or stream["status"] == "disconnected":
                 break
 
-            frame = stream.get("latest_frame")
             current_id = stream.get("frame_count", 0)
-            if frame is not None and current_id != last_frame_id:
+            if current_id != last_frame_id:
                 last_frame_id = current_id
-                # Downscale for MJPEG streaming to reduce encoding time
-                h, w = frame.shape[:2]
-                if w > 800:
-                    scale = 800 / w
-                    small = cv2.resize(frame, (800, int(h * scale)), interpolation=cv2.INTER_NEAREST)
-                else:
-                    small = frame
-                _, jpeg = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 55])
-                yield (b"--frame\r\n"
-                       b"Content-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n")
 
-            time.sleep(0.033)  # ~30 fps cap, only sends new frames
+                # MJPEG cameras: passthrough raw JPEG bytes (no decode/re-encode)
+                if is_mjpeg:
+                    jpeg_raw = stream.get("latest_jpeg")
+                    if jpeg_raw:
+                        yield (b"--frame\r\n"
+                               b"Content-Type: image/jpeg\r\n\r\n" + jpeg_raw + b"\r\n")
+                else:
+                    # RTSP cameras: encode decoded frame to JPEG
+                    frame = stream.get("latest_frame")
+                    if frame is not None:
+                        h, w = frame.shape[:2]
+                        if w > 800:
+                            scale = 800 / w
+                            small = cv2.resize(frame, (800, int(h * scale)), interpolation=cv2.INTER_NEAREST)
+                        else:
+                            small = frame
+                        _, jpeg = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 55])
+                        yield (b"--frame\r\n"
+                               b"Content-Type: image/jpeg\r\n\r\n" + jpeg.tobytes() + b"\r\n")
+
+            time.sleep(0.033)  # ~30 fps cap
 
     return StreamingResponse(
         mjpeg_generator(),
@@ -712,33 +801,42 @@ async def list_events(
                            since=since, limit=limit, offset=offset)
     total = db.count_events(camera_id=camera_id, detection_type=detection_type,
                             since=since)
-    # Add web-accessible snapshot and clip URLs
+    # Add web-accessible snapshot and clip URLs using stored full paths
     for ev in events:
         sp = ev.get("snapshot_path")
-        if sp:
-            ev["snapshot_url"] = f"/api/snapshots/{Path(sp).name}"
+        if sp and Path(sp).exists():
+            # Use relative path from snapshots root for URL
+            try:
+                rel = Path(sp).relative_to(SNAPSHOTS_DIR)
+                ev["snapshot_url"] = f"/api/snapshots/{rel.as_posix()}"
+            except ValueError:
+                ev["snapshot_url"] = f"/api/snapshots/{Path(sp).name}"
         meta = ev.get("metadata", "")
         if meta and meta.endswith(".mp4"):
-            ev["clip_url"] = f"/api/clips/{Path(meta).name}"
+            try:
+                rel = Path(meta).relative_to(CLIPS_DIR)
+                ev["clip_url"] = f"/api/clips/{rel.as_posix()}"
+            except ValueError:
+                ev["clip_url"] = f"/api/clips/{Path(meta).name}"
     return {"events": events, "total": total, "limit": limit, "offset": offset}
 
 
-@app.get("/api/snapshots/{filename}")
-async def get_snapshot(filename: str):
+@app.get("/api/snapshots/{filepath:path}")
+async def get_snapshot(filepath: str):
     """Serve a detection snapshot image."""
-    file_path = SNAPSHOTS_DIR / filename
+    file_path = SNAPSHOTS_DIR / filepath
     if not file_path.exists() or not file_path.is_file():
        raise HTTPException(404, "Snapshot not found")
-    return FileResponse(file_path, media_type="image/jpeg", filename=filename)
+    return FileResponse(file_path, media_type="image/jpeg", filename=file_path.name)
 
 
-@app.get("/api/clips/{filename}")
-async def get_clip(filename: str):
+@app.get("/api/clips/{filepath:path}")
+async def get_clip(filepath: str):
     """Serve a detection video clip."""
-    file_path = CLIPS_DIR / filename
+    file_path = CLIPS_DIR / filepath
     if not file_path.exists() or not file_path.is_file():
        raise HTTPException(404, "Clip not found")
-    return FileResponse(file_path, media_type="video/mp4", filename=filename)
+    return FileResponse(file_path, media_type="video/mp4", filename=file_path.name)
 
 
 # Credentials
@@ -811,5 +909,36 @@ async def set_detection_settings(toggle: DetectionToggle):
         detection_settings["objects"] = toggle.objects
     if toggle.faces is not None:
         detection_settings["faces"] = toggle.faces
+    _save_settings()
     logger.info(f"Detection settings updated: {detection_settings}")
     return {"message": "Detection settings updated", "settings": detection_settings}
+
+
+# Storage settings
+class StorageSettings(BaseModel):
+    storage_dir: str
+
+
+@app.get("/api/settings/storage")
+async def get_storage_settings():
+    """Get current storage directory."""
+    return {"storage_dir": str(STORAGE_DIR)}
+
+
+@app.post("/api/settings/storage")
+async def set_storage_settings(settings: StorageSettings):
+    """Update storage directory. Requires server restart to take full effect."""
+    global STORAGE_DIR, RECORDINGS_DIR, SNAPSHOTS_DIR, CLIPS_DIR, event_processor
+    new_dir = Path(settings.storage_dir)
+    if not new_dir.is_absolute():
+        raise HTTPException(400, "Storage directory must be an absolute path")
+    STORAGE_DIR = new_dir
+    RECORDINGS_DIR = STORAGE_DIR / "recordings"
+    SNAPSHOTS_DIR = STORAGE_DIR / "snapshots"
+    CLIPS_DIR = STORAGE_DIR / "clips"
+    for d in [RECORDINGS_DIR, SNAPSHOTS_DIR, CLIPS_DIR]:
+        d.mkdir(parents=True, exist_ok=True)
+    event_processor = EventProcessor(db=db, snapshot_dir=SNAPSHOTS_DIR, clips_dir=CLIPS_DIR)
+    _save_settings()
+    logger.info(f"Storage directory updated: {STORAGE_DIR}")
+    return {"message": "Storage directory updated", "storage_dir": str(STORAGE_DIR)}

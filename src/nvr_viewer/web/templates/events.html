@@ -291,7 +291,7 @@
             const color = typeColors[ev.detection_type] || '#888';
             const hasClip = !!ev.clip_url;
             const thumb = ev.snapshot_url || '';
-            const ts = ev.timestamp ? new Date(ev.timestamp.replace(' ','T')).toLocaleString() : '';
+            const ts = ev.timestamp ? new Date(ev.timestamp.replace(' ','T') + 'Z').toLocaleString() : '';
 
             return `
             <div class="event-card" onclick="openLightbox(${i})" data-index="${i}">
@@ -358,7 +358,7 @@
         const vid = document.getElementById('lb-video');
         const caption = document.getElementById('lb-caption');
 
-        const ts = ev.timestamp ? new Date(ev.timestamp.replace(' ','T')).toLocaleString() : '';
+        const ts = ev.timestamp ? new Date(ev.timestamp.replace(' ','T') + 'Z').toLocaleString() : '';
         caption.textContent = `${ev.detection_type} — ${ev.label || ''} · ${getCameraName(ev.camera_id)} · ${ts}`;
 
         if (ev.clip_url) {

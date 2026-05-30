@@ -4,14 +4,16 @@ Network Video Recorder with camera auto-detection, recording, and AI-powered det
 
 ## Features
 
+- **Web UI** — Dark-themed SPA with live camera grid, camera management, detection toggles, and events gallery
 - **Camera Auto-Detection** — Scans your network for RTSP and MJPEG cameras, probes common paths, works with Yoosee/HIipCamera, Motion, and standard ONVIF cameras
 - **MJPEG Support** — Connect HTTP MJPEG cameras (Motion, IP Webcam, etc.) alongside RTSP cameras
-- **Live Viewing** — Multi-camera live view with OpenCV GUI
+- **Live Viewing** — Multi-camera live view in browser or OpenCV GUI
 - **Recording** — Record streams directly to MP4 files (manual or motion-triggered)
 - **SD Card Access** — List and download recordings from camera SD cards
 - **Motion Detection** — Background subtraction-based motion detection (MOG2)
-- **Object Detection** — YOLOv8-powered person, animal, vehicle, and object detection
-- **Face Detection** — OpenCV DNN/Haar cascade face detection
+- **Object Detection** — YOLOv8s-powered person, animal, vehicle, and object detection
+- **Face Detection** — YuNet (ONNX) face detection with Haar cascade fallback
+- **Events Gallery** — Paginated event browser with filters, thumbnails, lightbox, and detection clips
 - **Detection Database** — All detection events logged to SQLite with timestamps, confidence, bounding boxes, and snapshots
 - **Encrypted Credentials** — Camera passwords stored with Fernet encryption
 
@@ -25,7 +27,27 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 
 # Activate
 .\.venv\Scripts\activate
+```
 
+### Web UI (Recommended)
+
+```powershell
+# Start the web interface
+nvr-viewer web --port 8080
+```
+
+Open **http://localhost:8080** in your browser. From the web UI you can:
+
+- **Scan** your network for cameras (RTSP + MJPEG auto-detection)
+- **Add/delete** cameras manually
+- **Live view** all camera streams in a grid
+- **Toggle detection** (Motion, Objects, Faces) per camera
+- **Browse events** in the paginated gallery at **http://localhost:8080/events**
+- **View clips** — 10-second detection videos with bounding boxes
+
+### CLI (Advanced)
+
+```powershell
 # Scan for cameras
 nvr-viewer scan
 
@@ -82,7 +104,7 @@ src/nvr_viewer/
 ├── web/
 │   ├── api.py          # FastAPI backend (streaming, detection, camera CRUD)
 │   ├── static/app.js   # Frontend SPA JavaScript
-│   └── templates/      # HTML templates
+│   └── templates/      # HTML templates (index.html, events.html)
 └── ui/
     └── viewer.py       # OpenCV multi-camera display
 ```

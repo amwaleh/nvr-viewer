@@ -13,13 +13,14 @@ class MotionDetector:
     Uses background subtraction (MOG2) for robust motion detection.
     """
     
-    def __init__(self, min_area: int = 500, threshold: float = 25.0, history: int = 500):
+    def __init__(self, min_area: int = 2000, threshold: float = 40.0, history: int = 500):
         self.min_area = min_area
         self.threshold = threshold
         self._bg_sub = cv2.createBackgroundSubtractorMOG2(
             history=history, varThreshold=threshold, detectShadows=True)
+        self._bg_sub.setNMixtures(5)  # more Gaussian mixtures for outdoor scenes
         self._frame_count = 0
-        self._warmup = 30  # frames before detection starts
+        self._warmup = 60  # longer warmup for stable background model
     
     def detect(self, frame: np.ndarray) -> list[dict]:
         """Detect motion regions in frame.
@@ -38,15 +39,18 @@ class MotionDetector:
             small = frame
 
         # Apply background subtraction
-        mask = self._bg_sub.apply(small)
+        blurred = cv2.GaussianBlur(small, (11, 11), 0)  # smooth out leaf/noise jitter
+        mask = self._bg_sub.apply(blurred, learningRate=0.002)  # slower learning = more stable bg
         
         # Remove shadows (value 127 in MOG2)
         _, mask = cv2.threshold(mask, 200, 255, cv2.THRESH_BINARY)
         
-        # Morphological operations to clean noise
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        # Aggressive morphological ops to eliminate scattered small motion (leaves, rain)
+        kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_small, iterations=2)  # remove noise
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_large)  # merge nearby blobs
+        mask = cv2.dilate(mask, kernel_small, iterations=1)
         
         # Skip warmup period
         if self._frame_count < self._warmup:
@@ -64,6 +68,18 @@ class MotionDetector:
                 continue
             
             x, y, w, h = cv2.boundingRect(contour)
+
+            # Reject very wide/flat shapes (leaves, branches swaying)
+            aspect = w / max(h, 1)
+            if aspect > 5.0 or aspect < 0.15:
+                continue
+
+            # Solidity filter: real objects fill their bounding box more than scattered leaves
+            hull = cv2.convexHull(contour)
+            hull_area = cv2.contourArea(hull)
+            solidity = area / max(hull_area, 1)
+            if solidity < 0.25:
+                continue
             # Scale bbox back to original resolution
             if scale != 1.0:
                 x, y, w, h = int(x / scale), int(y / scale), int(w / scale), int(h / scale)
@@ -85,4 +101,5 @@ class MotionDetector:
         """Reset the background model."""
         self._bg_sub = cv2.createBackgroundSubtractorMOG2(
             history=500, varThreshold=self.threshold, detectShadows=True)
+        self._bg_sub.setNMixtures(5)
         self._frame_count = 0

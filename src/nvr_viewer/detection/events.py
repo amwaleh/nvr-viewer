@@ -20,7 +20,7 @@ class ClipRecorder:
     """Records a short detection clip from a frame buffer + live frames."""
 
     def __init__(self, output_path: str, pre_frames: list[np.ndarray],
-                 post_duration: float = 7.0, fps: float = 10.0):
+                 post_duration: float = 10.0, fps: float = 15.0):
         self.output_path = output_path
         self.post_duration = post_duration
         self.fps = fps
@@ -35,7 +35,7 @@ class ClipRecorder:
         self._stream.width = w
         self._stream.height = h
         self._stream.pix_fmt = "yuv420p"
-        self._stream.options = {"crf": "23", "preset": "fast"}
+        self._stream.options = {"crf": "18", "preset": "medium"}
         self._frame_count = 0
 
         # Write pre-event buffer frames
@@ -60,19 +60,26 @@ class ClipRecorder:
             self.finish()
 
     def _draw_boxes(self, frame: np.ndarray) -> np.ndarray:
-        if not self._detections:
-            return frame
         out = frame.copy()
+        # Timestamp overlay
+        ts_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        h, w = out.shape[:2]
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        (tw, th), _ = cv2.getTextSize(ts_text, font, 0.6, 1)
+        cv2.rectangle(out, (w - tw - 12, h - th - 14), (w, h), (0, 0, 0), -1)
+        cv2.putText(out, ts_text, (w - tw - 8, h - 8), font, 0.6, (255, 255, 255), 1)
+        # Detection bboxes
+        if not self._detections:
+            return out
         for det in self._detections:
-            x, y, w, h = det["bbox"]
+            x, y, bw, bh = det["bbox"]
             color = {"motion": (0, 255, 255), "object": (0, 255, 0),
                      "face": (255, 0, 255)}.get(det["type"], (0, 255, 0))
-            cv2.rectangle(out, (x, y), (x + w, y + h), color, 2)
+            cv2.rectangle(out, (x, y), (x + bw, y + bh), color, 2)
             label = f"{det.get('label', det['type'])} {det.get('confidence', 0):.0%}"
-            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            (tw, th), _ = cv2.getTextSize(label, font, 0.5, 1)
             cv2.rectangle(out, (x, y - th - 6), (x + tw + 4, y), color, -1)
-            cv2.putText(out, label, (x + 2, y - 4),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+            cv2.putText(out, label, (x + 2, y - 4), font, 0.5, (0, 0, 0), 1)
         return out
 
     def _write(self, frame: np.ndarray):
@@ -107,8 +114,8 @@ class EventProcessor:
 
     def __init__(self, db=None, snapshot_dir: Path = SNAPSHOT_DIR,
                  clips_dir: Path = CLIPS_DIR, cooldown_seconds: float = 12.0,
-                 pre_buffer_seconds: float = 3.0, clip_duration: float = 10.0,
-                 fps: float = 10.0):
+                 pre_buffer_seconds: float = 3.0, clip_duration: float = 13.0,
+                 fps: float = 15.0, buffer_max_width: int = 720):
         self.db = db
         self.snapshot_dir = snapshot_dir
         self.clips_dir = clips_dir
@@ -118,19 +125,50 @@ class EventProcessor:
         self.pre_buffer_seconds = pre_buffer_seconds
         self.post_duration = clip_duration - pre_buffer_seconds
         self.fps = fps
+        self.buffer_max_width = buffer_max_width
         self._last_events: dict[str, datetime] = {}
         # Per-camera rolling frame buffer for pre-event capture
         self._frame_buffers: dict[int, deque] = {}
+        # Per-camera buffer frame counter for skip logic
+        self._buffer_counters: dict[int, int] = {}
         # Active clip recorders per camera
         self._clip_recorders: dict[int, ClipRecorder] = {}
 
+    @property
+    def buffer_skip(self) -> int:
+        """Adaptive buffer skip rate based on active camera count.
+        ≤3 cameras: buffer every frame (skip=1)
+        4-6 cameras: buffer every 2nd frame (skip=2)
+        7+  cameras: buffer every 3rd frame (skip=3)
+        """
+        n = len(self._frame_buffers)
+        if n <= 3:
+            return 1
+        elif n <= 6:
+            return 2
+        return 3
+
+    def _downscale(self, frame: np.ndarray) -> np.ndarray:
+        """Downscale frame for buffer storage to save memory."""
+        h, w = frame.shape[:2]
+        if w <= self.buffer_max_width:
+            return frame
+        scale = self.buffer_max_width / w
+        return cv2.resize(frame, (self.buffer_max_width, int(h * scale)),
+                          interpolation=cv2.INTER_AREA)
+
     def buffer_frame(self, camera_id: int, frame: np.ndarray):
-        """Add frame to rolling pre-event buffer (call on every Nth frame)."""
+        """Add downscaled frame to rolling pre-event buffer with adaptive skip."""
         max_frames = int(self.pre_buffer_seconds * self.fps)
         if camera_id not in self._frame_buffers:
             self._frame_buffers[camera_id] = deque(maxlen=max_frames)
-        # Store reference, only copy when clip starts
-        self._frame_buffers[camera_id].append(frame)
+            self._buffer_counters[camera_id] = 0
+
+        self._buffer_counters[camera_id] += 1
+
+        # Adaptive skip — fewer cameras = more frames buffered
+        if self._buffer_counters[camera_id] % self.buffer_skip == 0:
+            self._frame_buffers[camera_id].append(self._downscale(frame))
 
         # Feed active clip recorder
         rec = self._clip_recorders.get(camera_id)
@@ -138,6 +176,16 @@ class EventProcessor:
             rec.add_frame(frame)
         elif rec and not rec.active:
             del self._clip_recorders[camera_id]
+
+    @staticmethod
+    def _camera_dir(base_dir: Path, camera_id: int, camera_name: str) -> Path:
+        """Build date-structured output directory: base/camera_slug/YYYY/MM/DD/"""
+        import re
+        slug = re.sub(r'[^\w\-]', '_', camera_name).strip('_').lower() or f"cam_{camera_id}"
+        now = datetime.now()
+        d = base_dir / slug / now.strftime("%Y") / now.strftime("%m") / now.strftime("%d")
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     def process(self, camera_id: int, camera_name: str, frame: np.ndarray,
                 detections: list[dict]) -> list[dict]:
@@ -159,14 +207,17 @@ class EventProcessor:
                     continue
 
             self._last_events[key] = now
-            ts = now.strftime("%Y%m%d_%H%M%S")
-            safe_name = camera_name.replace(" ", "_")
+            ts = now.strftime("%H%M%S")
+
+            # Date-structured directories per camera
+            snap_dir = self._camera_dir(self.snapshot_dir, camera_id, camera_name)
+            clip_dir = self._camera_dir(self.clips_dir, camera_id, camera_name)
 
             # Save thumbnail with bbox
             snapshot_path = ""
             try:
-                fname = f"{safe_name}_{det['type']}_{ts}.jpg"
-                snapshot_path = str(self.snapshot_dir / fname)
+                fname = f"{ts}_{det['type']}.jpg"
+                snapshot_path = str(snap_dir / fname)
                 snap = frame.copy()
                 for d in detections:
                     x, y, w, h = d["bbox"]
@@ -185,8 +236,8 @@ class EventProcessor:
             clip_path = ""
             if camera_id not in self._clip_recorders or not self._clip_recorders[camera_id].active:
                 try:
-                    clip_fname = f"{safe_name}_{det['type']}_{ts}.mp4"
-                    clip_path = str(self.clips_dir / clip_fname)
+                    clip_fname = f"{ts}_{det['type']}.mp4"
+                    clip_path = str(clip_dir / clip_fname)
                     pre_frames = list(self._frame_buffers.get(camera_id, []))
                     clip_rec = ClipRecorder(clip_path, pre_frames,
                                            post_duration=self.post_duration,

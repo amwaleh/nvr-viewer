@@ -22,6 +22,9 @@ class NVRApp {
     }
 
     async init() {
+        this.cameraOrder = JSON.parse(localStorage.getItem('nvr-camera-order') || '[]');
+        this.cameraPage = 0;
+        this.camerasPerPage = 4;
         this.setupEventListeners();
         await Promise.all([
             this.loadCameras(),
@@ -29,6 +32,7 @@ class NVRApp {
             this.loadEvents(),
             this.loadStatus(),
             this.loadDetectionSettings(),
+            this.loadStorageSettings(),
         ]);
         this.startStatusPolling();
         this.startEventsPolling();
@@ -54,6 +58,17 @@ class NVRApp {
     async loadCameras() {
         try {
             const cameras = await this.api('GET', '/api/cameras');
+            // Apply saved order
+            if (this.cameraOrder.length) {
+                cameras.sort((a, b) => {
+                    const ai = this.cameraOrder.indexOf(a.id);
+                    const bi = this.cameraOrder.indexOf(b.id);
+                    if (ai === -1 && bi === -1) return 0;
+                    if (ai === -1) return 1;
+                    if (bi === -1) return -1;
+                    return ai - bi;
+                });
+            }
             const nextFeedState = new Map();
             cameras.forEach((camera) => {
                 nextFeedState.set(camera.id, this.feedState.has(camera.id) ? this.feedState.get(camera.id) : true);
@@ -274,7 +289,33 @@ class NVRApp {
             return;
         }
 
-        container.innerHTML = this.cameras.map((camera) => {
+        const total = this.cameras.length;
+        const perPage = this.camerasPerPage;
+        const totalPages = Math.ceil(total / perPage);
+        if (this.cameraPage >= totalPages) this.cameraPage = totalPages - 1;
+        if (this.cameraPage < 0) this.cameraPage = 0;
+        const start = this.cameraPage * perPage;
+        const visibleCameras = this.cameras.slice(start, start + perPage);
+
+        // Stop streams for cameras NOT on the current page
+        this.cameras.forEach(cam => {
+            const isVisible = visibleCameras.some(v => v.id === cam.id);
+            const feedImg = document.querySelector(`img.feed-frame[src="/api/stream/${cam.id}"]`);
+            if (!isVisible && feedImg) {
+                feedImg.src = '';  // Stop loading the stream
+            }
+        });
+
+        // Pagination header
+        const pagHeader = total > perPage ? `
+            <div class="camera-page-controls">
+                <button class="btn-ghost" ${this.cameraPage === 0 ? 'disabled' : ''} data-action="cam-page-prev">← Prev</button>
+                <span class="camera-page-info">Page ${this.cameraPage + 1} of ${totalPages} · Showing ${start + 1}–${Math.min(start + perPage, total)} of ${total} cameras</span>
+                <button class="btn-ghost" ${this.cameraPage >= totalPages - 1 ? 'disabled' : ''} data-action="cam-page-next">Next →</button>
+            </div>` : '';
+
+        // Camera cards with drag support
+        const cards = visibleCameras.map((camera) => {
             const state = this.getCameraState(camera);
             const enabled = this.feedState.get(camera.id) !== false;
             const streamAction = enabled ? 'stop-feed' : 'start-feed';
@@ -282,16 +323,26 @@ class NVRApp {
             const recordLabel = state.recording ? '● Recording' : 'Record';
 
             return `
-                <article class="camera-card" data-camera-card="${camera.id}">
+                <article class="camera-card" data-camera-card="${camera.id}" draggable="true" data-drag-id="${camera.id}">
                     <div class="camera-card-header">
-                        <div class="camera-meta">
-                            <strong>${escapeHtml(camera.name)}</strong>
-                            <span>${escapeHtml(camera.host)}:${escapeHtml(camera.port)}${escapeHtml(camera.path)}</span>
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            <span class="drag-handle" title="Drag to reorder">
+                                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="4" cy="2" r="1.5"/><circle cx="10" cy="2" r="1.5"/><circle cx="4" cy="7" r="1.5"/><circle cx="10" cy="7" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="10" cy="12" r="1.5"/></svg>
+                            </span>
+                            <div class="camera-meta">
+                                <strong>${escapeHtml(camera.name)}</strong>
+                                <span>${escapeHtml(camera.host)}:${escapeHtml(camera.port)}${escapeHtml(camera.path)}</span>
+                            </div>
                         </div>
-                        <span class="status-badge ${this.getStatusClass(state.status)}" data-role="status-badge">${escapeHtml(state.status)}</span>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            ${enabled ? `<button class="btn-ghost focus-btn" type="button" onclick="window._openCameraFocus(${camera.id},'${escapeHtml(camera.name).replace(/'/g, "\\'")}')" title="Enlarge">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4"/></svg>
+                            </button>` : ''}
+                            <span class="status-badge ${this.getStatusClass(state.status)}" data-role="status-badge">${escapeHtml(state.status)}</span>
+                        </div>
                     </div>
                     ${enabled
-                        ? `<img class="feed-frame" src="/api/stream/${camera.id}" alt="Live stream for ${escapeHtml(camera.name)}">`
+                        ? `<img class="feed-frame" src="/api/stream/${camera.id}" alt="Live stream for ${escapeHtml(camera.name)}" onclick="window._openCameraFocus(${camera.id},'${escapeHtml(camera.name).replace(/'/g, "\\'")}')" style="cursor:pointer;" title="Click to enlarge">`
                         : `<div class="feed-placeholder">Stream is stopped for ${escapeHtml(camera.name)}.<br>Use Start or Connect to resume.</div>`}
                     <div class="camera-card-footer">
                         <div class="camera-meta">
@@ -307,6 +358,52 @@ class NVRApp {
                 </article>
             `;
         }).join('');
+
+        container.innerHTML = pagHeader + cards;
+
+        // Setup drag-and-drop
+        this._setupDragAndDrop(container);
+    }
+
+    _setupDragAndDrop(container) {
+        let dragId = null;
+        const cards = container.querySelectorAll('[draggable="true"]');
+        cards.forEach(card => {
+            card.addEventListener('dragstart', (e) => {
+                dragId = parseInt(card.dataset.dragId);
+                card.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+            });
+            card.addEventListener('dragend', () => {
+                card.classList.remove('dragging');
+                dragId = null;
+                container.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+            });
+            card.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                card.classList.add('drag-over');
+            });
+            card.addEventListener('dragleave', () => {
+                card.classList.remove('drag-over');
+            });
+            card.addEventListener('drop', (e) => {
+                e.preventDefault();
+                card.classList.remove('drag-over');
+                const dropId = parseInt(card.dataset.dragId);
+                if (dragId === null || dragId === dropId) return;
+                // Reorder cameras array
+                const fromIdx = this.cameras.findIndex(c => c.id === dragId);
+                const toIdx = this.cameras.findIndex(c => c.id === dropId);
+                if (fromIdx === -1 || toIdx === -1) return;
+                const [moved] = this.cameras.splice(fromIdx, 1);
+                this.cameras.splice(toIdx, 0, moved);
+                // Save order
+                this.cameraOrder = this.cameras.map(c => c.id);
+                localStorage.setItem('nvr-camera-order', JSON.stringify(this.cameraOrder));
+                this.renderCameraGrid();
+            });
+        });
     }
 
     renderCameraList() {
@@ -622,6 +719,12 @@ class NVRApp {
                 target.textContent = 'Added';
                 target.disabled = true;
                 target.style.opacity = '.5';
+            } else if (action === 'cam-page-prev') {
+                this.cameraPage = Math.max(0, this.cameraPage - 1);
+                this.renderCameraGrid();
+            } else if (action === 'cam-page-next') {
+                this.cameraPage++;
+                this.renderCameraGrid();
             } else if (action === 'delete-camera') {
                 const camera = this.cameras.find(c => c.id === id);
                 if (confirm(`Delete camera "${camera?.name || id}"? This cannot be undone.`)) {
@@ -639,6 +742,8 @@ class NVRApp {
                 await this.saveEditCamera();
             } else if (action === 'cancel-edit-camera') {
                 document.getElementById('edit-camera-dialog').style.display = 'none';
+            } else if (action === 'save-storage-dir') {
+                await this.saveStorageDir();
             }
         });
     }
@@ -656,6 +761,7 @@ class NVRApp {
             this.loadRecordings();
         } else if (tab === 'events') {
             this.loadEvents();
+            this.loadStorageSettings();
         }
 
         if (window.innerWidth <= 960) {
@@ -705,6 +811,45 @@ class NVRApp {
         }
     }
 
+    // --- Storage Settings ---
+    async loadStorageSettings() {
+        try {
+            const data = await this.api('GET', '/api/settings/storage');
+            const input = document.getElementById('storage-dir-input');
+            const info = document.getElementById('storage-info');
+            if (input) input.value = data.storage_dir || '';
+            if (info) {
+                info.innerHTML = `${data.storage_dir}<br>├── recordings/<br>│   └── {camera}/{YYYY}/{MM}/{DD}/<br>├── snapshots/<br>│   └── {camera}/{YYYY}/{MM}/{DD}/<br>└── clips/<br>    └── {camera}/{YYYY}/{MM}/{DD}/`;
+            }
+        } catch (e) {
+            console.error('Failed to load storage settings', e);
+        }
+    }
+
+    async saveStorageDir() {
+        const input = document.getElementById('storage-dir-input');
+        const statusEl = document.getElementById('storage-dir-status');
+        const dir = input?.value?.trim();
+        if (!dir) {
+            if (statusEl) { statusEl.textContent = '⚠ Please enter a directory path'; statusEl.style.color = '#f59e0b'; }
+            return;
+        }
+        try {
+            const result = await this.api('POST', '/api/settings/storage', { storage_dir: dir });
+            if (statusEl) {
+                statusEl.textContent = '✓ Storage directory updated';
+                statusEl.style.color = '#10b981';
+                setTimeout(() => { statusEl.textContent = ''; }, 3000);
+            }
+            this.loadStorageSettings();
+        } catch (e) {
+            if (statusEl) {
+                statusEl.textContent = `✗ ${e.message}`;
+                statusEl.style.color = '#ef4444';
+            }
+        }
+    }
+
     // --- Helpers ---
     showToast(message, type = 'info') {
         const container = document.getElementById('toast-container');
@@ -731,7 +876,10 @@ class NVRApp {
 
     formatTime(iso) {
         if (!iso) return '—';
-        const date = new Date(iso);
+        // DB stores UTC via datetime('now') — append Z so JS parses as UTC
+        let s = String(iso);
+        if (!s.endsWith('Z') && !s.includes('+')) s = s.replace(' ', 'T') + 'Z';
+        const date = new Date(s);
         if (Number.isNaN(date.getTime())) return String(iso);
         return date.toLocaleString();
     }

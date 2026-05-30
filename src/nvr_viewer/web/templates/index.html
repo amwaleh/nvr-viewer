@@ -190,6 +190,42 @@
             gap: 16px;
         }
 
+        .camera-page-controls {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            padding: 8px 0;
+        }
+        .camera-page-info {
+            font-size: .82rem;
+            color: var(--text-muted);
+        }
+
+        .drag-handle {
+            cursor: grab;
+            font-size: 1.2rem;
+            color: #fff;
+            user-select: none;
+            opacity: .6;
+            transition: opacity .2s;
+            flex-shrink: 0;
+        }
+        .drag-handle:hover { opacity: 1; }
+        .focus-btn {
+            padding: 5px 8px;
+            opacity: .7;
+            border: 1px solid rgba(255,255,255,.2);
+            border-radius: 4px;
+            color: #fff;
+            transition: opacity .2s;
+        }
+        .focus-btn:hover { opacity: 1; background: rgba(255,255,255,.1); }
+        .camera-card[draggable="true"] { transition: opacity .2s, border-color .2s; }
+        .camera-card.dragging { opacity: .4; }
+        .camera-card.drag-over { border-color: var(--accent) !important; border-style: dashed; }
+
         .empty-state,
         .empty-inline {
             border: 1px dashed var(--border);
@@ -481,7 +517,7 @@
         }
 
         input,
-        select {
+        select, input[type="text"] {
             width: 100%;
             border: 1px solid var(--border);
             background: rgba(10, 15, 30, 0.85);
@@ -917,6 +953,26 @@
                             <div id="detection-status" class="detection-status"></div>
                         </div>
                         <hr style="border-color:#333;margin:0 0 1rem 0;">
+                        <!-- Storage Settings -->
+                        <div class="stack" style="margin-bottom:1.2rem;">
+                            <div class="section-header">
+                                <div>
+                                    <h3>Storage</h3>
+                                    <p class="panel-subtitle">Where snapshots, clips, and recordings are saved.</p>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <div style="display:flex;gap:8px;">
+                                    <input type="text" id="storage-dir-input" placeholder="e.g. C:\Users\you\nvr-data" style="flex:1;">
+                                    <button class="btn" type="button" data-action="save-storage-dir">Save</button>
+                                </div>
+                                <div id="storage-dir-status" style="font-size:.75rem;margin-top:6px;"></div>
+                                <div id="storage-info" style="font-size:.72rem;color:var(--text-muted);font-family:monospace;background:rgba(0,0,0,.3);padding:8px 10px;border-radius:6px;line-height:1.5;margin-top:8px;">
+                                    Loading...
+                                </div>
+                            </div>
+                        </div>
+                        <hr style="border-color:#333;margin:0 0 1rem 0;">
                         <!-- Events List -->
                         <div class="stack">
                             <div class="section-header">
@@ -956,6 +1012,20 @@
 
     <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
+    <!-- Camera focus overlay (enlarged live view) -->
+    <div id="camera-focus-overlay" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.92);flex-direction:column;align-items:center;justify-content:center;cursor:default;" onclick="if(event.target===this)window._closeCameraFocus()">
+        <div id="camera-focus-header" style="position:absolute;top:0;left:0;right:0;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;z-index:2;">
+            <div style="display:flex;align-items:center;gap:12px;">
+                <span id="camera-focus-name" style="color:#fff;font-size:1.3rem;font-weight:600;"></span>
+                <span id="camera-focus-badge" class="status-badge status-streaming" style="font-size:.7rem;">STREAMING</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <button onclick="window._closeCameraFocus()" style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);color:#fff;font-size:1rem;padding:6px 16px;border-radius:6px;cursor:pointer;">✕ Close</button>
+            </div>
+        </div>
+        <img id="camera-focus-feed" src="" alt="Focused camera view" style="max-width:96vw;max-height:88vh;object-fit:contain;border-radius:8px;box-shadow:0 8px 48px rgba(0,0,0,.8);">
+    </div>
+
     <!-- Media lightbox (images + video clips) -->
     <div id="snapshot-lightbox" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);align-items:center;justify-content:center;cursor:zoom-out;flex-direction:column;gap:12px;" onclick="if(event.target===this)window._closeLightbox()">
         <img id="snapshot-lightbox-img" src="" alt="Snapshot" style="max-width:92vw;max-height:82vh;border-radius:8px;box-shadow:0 4px 32px rgba(0,0,0,.6);object-fit:contain;">
@@ -965,6 +1035,27 @@
     </div>
 
     <script>
+    /* Camera focus (enlarged live view) */
+    window._openCameraFocus = function(cameraId, cameraName) {
+        const overlay = document.getElementById('camera-focus-overlay');
+        const feed = document.getElementById('camera-focus-feed');
+        const nameEl = document.getElementById('camera-focus-name');
+        nameEl.textContent = cameraName;
+        feed.src = '/api/stream/' + cameraId;
+        overlay.style.display = 'flex';
+    };
+    window._closeCameraFocus = function() {
+        const overlay = document.getElementById('camera-focus-overlay');
+        const feed = document.getElementById('camera-focus-feed');
+        feed.src = '';
+        overlay.style.display = 'none';
+    };
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && document.getElementById('camera-focus-overlay').style.display === 'flex') {
+            window._closeCameraFocus();
+        }
+    });
+
     window._closeLightbox = function() {
         const lb = document.getElementById('snapshot-lightbox');
         const vid = document.getElementById('snapshot-lightbox-video');
