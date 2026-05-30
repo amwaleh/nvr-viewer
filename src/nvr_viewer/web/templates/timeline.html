@@ -8,412 +8,456 @@
     <script>
     tailwind.config = {
         darkMode: 'class',
-        theme: {
-            extend: {
-                colors: {
-                    nvr: {
-                        bg: '#1a1a2e',
-                        card: '#16213e',
-                        accent: '#0f3460',
-                        highlight: '#e94560',
-                        border: '#2a2a4a',
-                    },
-                },
-            },
-        },
+        theme: { extend: { colors: {
+            nvr: { bg: '#1a1a2e', card: '#16213e', accent: '#0f3460', highlight: '#e94560', border: '#2a2a4a' }
+        }}}
     };
     </script>
     <style>
-        :root { --text-muted: #94a3b8; }
+        :root { --text-muted: #94a3b8; --green: #4ade80; --green-dim: rgba(74,222,128,0.15); }
 
-        .timeline-bar {
-            display: flex;
-            height: 40px;
-            border-radius: 8px;
-            overflow: hidden;
-            background: rgba(30, 41, 59, 0.6);
-            border: 1px solid rgba(255,255,255,0.08);
+        /* Timeline bar */
+        .tl-wrap { position: relative; margin: 0 0 2rem; }
+        .tl-bar {
+            display: grid; grid-template-columns: repeat(24, 1fr);
+            height: 52px; border-radius: 10px; overflow: hidden;
+            background: rgba(15,20,40,0.6); border: 1px solid rgba(255,255,255,0.06);
         }
-        .timeline-hour {
-            flex: 1;
-            position: relative;
-            border-right: 1px solid rgba(255,255,255,0.05);
-            cursor: pointer;
-            transition: background 0.15s;
+        .tl-cell {
+            position: relative; cursor: pointer;
+            border-right: 1px solid rgba(255,255,255,0.03);
+            transition: background 0.12s, box-shadow 0.12s;
         }
-        .timeline-hour:last-child { border-right: none; }
-        .timeline-hour:hover { background: rgba(255,255,255,0.08); }
-        .timeline-hour.has-data { background: rgba(74, 222, 128, 0.25); }
-        .timeline-hour.has-data:hover { background: rgba(74, 222, 128, 0.4); }
-        .timeline-hour.selected { background: rgba(74, 222, 128, 0.5); box-shadow: inset 0 0 0 2px #4ade80; }
-        .timeline-hour .hour-label {
-            position: absolute;
-            bottom: -18px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 0.6rem;
-            color: var(--text-muted);
+        .tl-cell:last-child { border-right: none; }
+        .tl-cell:hover { background: rgba(255,255,255,0.06); }
+        .tl-cell.has-data {
+            background: linear-gradient(180deg, rgba(74,222,128,0.35) 0%, rgba(74,222,128,0.12) 100%);
         }
-        .timeline-hour .hour-label.major {
-            font-size: 0.7rem;
-            color: #cbd5e1;
+        .tl-cell.has-data:hover {
+            background: linear-gradient(180deg, rgba(74,222,128,0.5) 0%, rgba(74,222,128,0.2) 100%);
+        }
+        .tl-cell.active {
+            background: linear-gradient(180deg, rgba(74,222,128,0.6) 0%, rgba(74,222,128,0.3) 100%) !important;
+            box-shadow: inset 0 -3px 0 var(--green);
+        }
+        .tl-cell .seg-count {
+            position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
+            font-size: 0.6rem; font-weight: 700; color: #fff; opacity: 0.7;
+        }
+        .tl-labels {
+            display: grid; grid-template-columns: repeat(24, 1fr);
+            margin-top: 4px;
+        }
+        .tl-labels span {
+            text-align: center; font-size: 0.6rem; color: var(--text-muted);
+            line-height: 1;
+        }
+        .tl-labels span.major { color: #cbd5e1; font-weight: 600; font-size: 0.65rem; }
+
+        /* Current time marker */
+        .tl-now {
+            position: absolute; top: 0; bottom: 0; width: 2px;
+            background: #f59e0b; z-index: 5; pointer-events: none;
+        }
+        .tl-now::after {
+            content: 'NOW'; position: absolute; top: -16px; left: 50%;
+            transform: translateX(-50%); font-size: 0.55rem; font-weight: 700;
+            color: #f59e0b; letter-spacing: 0.05em;
         }
 
+        /* Date chips */
         .date-chip {
-            padding: 0.35rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.8rem;
-            border: 1px solid rgba(255,255,255,0.1);
-            background: rgba(30,41,59,0.5);
-            color: #94a3b8;
-            cursor: pointer;
-            transition: all 0.15s;
-            white-space: nowrap;
+            padding: 0.4rem 0.9rem; border-radius: 9999px; font-size: 0.78rem;
+            border: 1px solid rgba(255,255,255,0.08); background: rgba(15,20,40,0.5);
+            color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+            white-space: nowrap; font-weight: 500;
         }
         .date-chip:hover { border-color: rgba(74,222,128,0.3); color: #e2e8f0; }
         .date-chip.active {
-            background: rgba(74,222,128,0.2);
-            border-color: rgba(74,222,128,0.5);
-            color: #4ade80;
+            background: var(--green-dim); border-color: rgba(74,222,128,0.5);
+            color: var(--green); font-weight: 600;
         }
+        .date-chip .day-name { font-weight: 400; opacity: 0.6; margin-right: 4px; }
 
-        .segment-item {
-            padding: 0.5rem 0.75rem;
-            border-radius: 8px;
-            background: rgba(30,41,59,0.4);
-            border: 1px solid rgba(255,255,255,0.06);
-            cursor: pointer;
-            transition: all 0.15s;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
+        /* Segment list */
+        .seg-card {
+            display: flex; align-items: center; gap: 0.75rem;
+            padding: 0.6rem 0.85rem; border-radius: 10px;
+            background: rgba(15,20,40,0.4); border: 1px solid rgba(255,255,255,0.05);
+            cursor: pointer; transition: all 0.15s;
         }
-        .segment-item:hover { border-color: rgba(74,222,128,0.3); background: rgba(30,41,59,0.7); }
-        .segment-item.playing { border-color: #4ade80; background: rgba(74,222,128,0.1); }
+        .seg-card:hover { border-color: rgba(74,222,128,0.25); background: rgba(15,20,40,0.65); }
+        .seg-card.playing {
+            border-color: var(--green); background: var(--green-dim);
+            box-shadow: 0 0 16px rgba(74,222,128,0.08);
+        }
+        .seg-play-icon {
+            width: 32px; height: 32px; border-radius: 50%;
+            display: grid; place-items: center; flex-shrink: 0;
+            background: rgba(74,222,128,0.15); color: var(--green);
+            transition: all 0.15s;
+        }
+        .seg-card:hover .seg-play-icon { background: rgba(74,222,128,0.25); }
+        .seg-card.playing .seg-play-icon { background: var(--green); color: #000; }
+
+        /* Player controls bar */
+        .player-controls {
+            display: flex; align-items: center; gap: 0.5rem;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            padding: 0.6rem 1rem; background: rgba(15,20,40,0.3);
+        }
+        .ctrl-btn {
+            padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.75rem;
+            border: 1px solid rgba(255,255,255,0.08); background: transparent;
+            color: var(--text-muted); cursor: pointer; transition: all 0.12s;
+        }
+        .ctrl-btn:hover { border-color: rgba(255,255,255,0.2); color: #fff; }
+        .ctrl-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        /* Badge */
+        .trigger-badge {
+            display: inline-flex; align-items: center; gap: 3px;
+            padding: 1px 6px; border-radius: 4px; font-size: 0.6rem;
+            font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+        }
+        .trigger-badge.manual { background: rgba(56,189,248,0.15); color: #38bdf8; }
+        .trigger-badge.motion { background: rgba(251,191,36,0.15); color: #fbbf24; }
+        .trigger-badge.continuous { background: rgba(74,222,128,0.15); color: #4ade80; }
+        .trigger-badge.other { background: rgba(148,163,184,0.15); color: #94a3b8; }
+
+        /* Scrollbar */
+        .seg-scroll::-webkit-scrollbar { width: 4px; }
+        .seg-scroll::-webkit-scrollbar-track { background: transparent; }
+        .seg-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+
+        /* Pulse animation for live indicator */
+        @keyframes pulse-green { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .pulse { animation: pulse-green 1.5s ease-in-out infinite; }
     </style>
 </head>
 <body class="min-h-screen bg-nvr-bg text-slate-100 antialiased dark">
-    <div class="flex min-h-screen flex-col">
-        <!-- Header -->
-        <header class="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-nvr-border bg-nvr-accent/30 p-4 backdrop-blur-sm md:px-6">
-            <div class="flex items-center gap-3">
-                <a href="/" class="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-sky-500/90 to-nvr-accent text-sm font-bold tracking-[0.18em] text-white shadow-lg hover:opacity-80">NV</a>
-                <div>
-                    <h1 class="text-xl font-semibold tracking-tight text-white">Timeline</h1>
-                    <p class="text-sm text-slate-400">Browse and replay continuous recordings</p>
-                </div>
-            </div>
-            <nav class="flex items-center gap-3 text-sm">
-                <a href="/" class="text-slate-400 hover:text-white">Dashboard</a>
-                <a href="/events" class="text-slate-400 hover:text-white">Events</a>
-                <a href="/settings" class="text-slate-400 hover:text-white">Settings</a>
-            </nav>
-        </header>
+<div class="flex min-h-screen flex-col">
 
-        <!-- Main Content -->
-        <main class="flex-1 p-4 md:p-6">
-            <!-- Camera Selector -->
-            <div class="mb-6 flex flex-wrap items-center gap-4">
-                <label class="text-sm font-medium text-slate-300">Camera</label>
-                <select id="camera-select" class="rounded-lg border border-nvr-border bg-nvr-card px-4 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none" onchange="loadDates()">
+    <!-- Header -->
+    <header class="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-nvr-border bg-nvr-accent/30 p-4 backdrop-blur-sm md:px-6">
+        <div class="flex items-center gap-3">
+            <a href="/" class="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-sky-500/90 to-nvr-accent text-sm font-bold tracking-[0.18em] text-white shadow-lg hover:opacity-80">NV</a>
+            <div>
+                <h1 class="text-xl font-semibold tracking-tight text-white">⏱ Timeline</h1>
+                <p class="text-sm text-slate-400">Browse and replay recordings by date and hour</p>
+            </div>
+        </div>
+        <nav class="flex items-center gap-3 text-sm">
+            <a href="/" class="rounded-lg px-3 py-1.5 text-slate-400 transition hover:bg-white/5 hover:text-white">Dashboard</a>
+            <a href="/events" class="rounded-lg px-3 py-1.5 text-slate-400 transition hover:bg-white/5 hover:text-white">Events</a>
+            <a href="/settings" class="rounded-lg px-3 py-1.5 text-slate-400 transition hover:bg-white/5 hover:text-white">Settings</a>
+        </nav>
+    </header>
+
+    <!-- Main -->
+    <main class="flex-1 p-4 md:p-6 max-w-screen-2xl mx-auto w-full">
+
+        <!-- Top bar: camera + date selector -->
+        <div class="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex items-center gap-3">
+                <div class="grid h-9 w-9 place-items-center rounded-lg bg-emerald-500/15 text-emerald-400">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                </div>
+                <select id="camera-select" onchange="loadDates()"
+                    class="rounded-lg border border-nvr-border bg-nvr-card px-4 py-2.5 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 min-w-[200px]">
                     <option value="">Select a camera…</option>
                 </select>
-                <span id="recording-count" class="text-xs text-slate-500"></span>
+                <span id="recording-count" class="text-xs text-slate-500 hidden sm:inline"></span>
             </div>
+        </div>
 
-            <!-- Date Chips -->
-            <div id="dates-section" class="mb-6 hidden">
-                <h3 class="mb-2 text-xs font-medium uppercase tracking-widest text-slate-500">Available Dates</h3>
-                <div id="dates-container" class="flex flex-wrap gap-2"></div>
+        <!-- Date chips -->
+        <div id="dates-section" class="mb-5 hidden">
+            <div id="dates-container" class="flex flex-wrap gap-2"></div>
+        </div>
+
+        <!-- Timeline bar -->
+        <div id="timeline-section" class="hidden tl-wrap">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs font-medium uppercase tracking-widest text-slate-500">24-Hour Timeline</h3>
+                <span id="tl-summary" class="text-xs text-slate-500"></span>
             </div>
+            <div class="tl-bar" id="tl-bar"></div>
+            <div class="tl-labels" id="tl-labels"></div>
+        </div>
 
-            <!-- Timeline Bar -->
-            <div id="timeline-section" class="mb-6 hidden">
-                <h3 class="mb-2 text-xs font-medium uppercase tracking-widest text-slate-500">24-Hour Timeline</h3>
-                <div class="timeline-bar" id="timeline-bar"></div>
-                <div class="relative h-5" id="timeline-labels"></div>
-            </div>
+        <!-- Player + Segments Grid -->
+        <div id="player-section" class="hidden">
+            <div class="grid gap-5 lg:grid-cols-[1fr_320px]">
 
-            <!-- Player + Segments -->
-            <div id="player-section" class="hidden grid gap-6 lg:grid-cols-3">
                 <!-- Video Player -->
-                <div class="lg:col-span-2">
-                    <div class="overflow-hidden rounded-xl border border-nvr-border bg-nvr-card">
-                        <div id="player-placeholder" class="flex aspect-video items-center justify-center bg-slate-900/50">
-                            <p class="text-sm text-slate-500">Select a segment to play</p>
-                        </div>
-                        <video id="video-player" class="hidden aspect-video w-full bg-black" controls></video>
-                        <div class="flex items-center justify-between border-t border-nvr-border px-4 py-2">
-                            <div>
-                                <span id="now-playing" class="text-sm text-slate-400">No segment selected</span>
+                <div class="overflow-hidden rounded-xl border border-nvr-border bg-nvr-card shadow-2xl shadow-black/20">
+                    <div id="player-placeholder" class="flex aspect-video items-center justify-center bg-gradient-to-br from-slate-900/80 to-nvr-bg">
+                        <div class="text-center">
+                            <div class="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-2xl bg-white/5">
+                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-slate-600"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                             </div>
-                            <div class="flex gap-2">
-                                <button onclick="playPrev()" class="rounded-lg border border-nvr-border bg-nvr-card px-3 py-1 text-xs text-slate-400 hover:text-white" title="Previous">⏮ Prev</button>
-                                <button onclick="playNext()" class="rounded-lg border border-nvr-border bg-nvr-card px-3 py-1 text-xs text-slate-400 hover:text-white" title="Next">Next ⏭</button>
-                            </div>
+                            <p class="text-sm text-slate-500">Select a segment to start playback</p>
                         </div>
+                    </div>
+                    <video id="video-player" class="hidden aspect-video w-full bg-black" controls preload="auto"></video>
+                    <div class="player-controls">
+                        <button onclick="playPrev()" id="btn-prev" class="ctrl-btn" disabled>⏮ Prev</button>
+                        <button onclick="playNext()" id="btn-next" class="ctrl-btn" disabled>Next ⏭</button>
+                        <div class="flex-1"></div>
+                        <span id="now-playing" class="text-xs text-slate-500 truncate max-w-[300px]">No segment selected</span>
+                        <span id="seg-counter" class="text-xs text-slate-600"></span>
                     </div>
                 </div>
 
                 <!-- Segment List -->
-                <div>
-                    <h3 class="mb-2 text-xs font-medium uppercase tracking-widest text-slate-500">Segments <span id="segment-hour-label"></span></h3>
-                    <div id="segments-list" class="flex max-h-[60vh] flex-col gap-2 overflow-y-auto pr-1"></div>
+                <div class="flex flex-col">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-xs font-medium uppercase tracking-widest text-slate-500">
+                            Segments <span id="seg-hour-label" class="text-emerald-400"></span>
+                        </h3>
+                        <span id="seg-count" class="text-xs text-slate-600"></span>
+                    </div>
+                    <div id="segments-list" class="seg-scroll flex flex-col gap-2 overflow-y-auto max-h-[calc(56.25vw-40px)] lg:max-h-[60vh]"></div>
                 </div>
             </div>
+        </div>
 
-            <!-- Empty State -->
-            <div id="empty-state" class="mt-20 text-center">
-                <p class="text-5xl">📹</p>
-                <p class="mt-4 text-lg text-slate-400">Select a camera to browse recordings</p>
-                <p class="mt-1 text-sm text-slate-500">Enable continuous recording on camera cards to start building a timeline</p>
+        <!-- Empty State -->
+        <div id="empty-state" class="mt-16 text-center">
+            <div class="mx-auto mb-4 grid h-20 w-20 place-items-center rounded-3xl bg-white/5">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-slate-600">
+                    <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+                    <circle cx="12" cy="13" r="4"/>
+                </svg>
             </div>
-        </main>
-    </div>
+            <p class="text-lg text-slate-400">Select a camera to browse recordings</p>
+            <p class="mt-1 text-sm text-slate-500">Enable continuous recording ⏺ on camera cards to build a timeline</p>
+        </div>
+    </main>
+</div>
 
-    <script>
-    let allSegments = [];
-    let currentSegmentIndex = -1;
-    let currentHour = null;
+<script>
+let allSegments = [];
+let currentIndex = -1;
+let _hoursCache = {};
 
-    async function api(method, url) {
-        const res = await fetch(url, { method });
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        return res.json();
-    }
+async function api(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`${res.status}`);
+    return res.json();
+}
 
-    // Load cameras into selector
-    async function loadCameras() {
-        try {
-            const cameras = await api('GET', '/api/cameras');
-            const select = document.getElementById('camera-select');
-            cameras.forEach(cam => {
-                const opt = document.createElement('option');
-                opt.value = cam.id;
-                opt.textContent = cam.name;
-                select.appendChild(opt);
-            });
+// --- Init ---
+async function init() {
+    try {
+        const cameras = await api('/api/cameras');
+        const sel = document.getElementById('camera-select');
+        cameras.forEach(c => {
+            const o = document.createElement('option');
+            o.value = c.id; o.textContent = c.name;
+            sel.appendChild(o);
+        });
+        const p = new URLSearchParams(location.search);
+        if (p.get('camera')) { sel.value = p.get('camera'); loadDates(); }
+    } catch(e) { console.error('Init failed', e); }
+}
 
-            // Check URL params
-            const params = new URLSearchParams(window.location.search);
-            if (params.get('camera')) {
-                select.value = params.get('camera');
-                loadDates();
-            }
-        } catch (e) {
-            console.error('Failed to load cameras', e);
-        }
-    }
+// --- Load Dates ---
+async function loadDates() {
+    const id = document.getElementById('camera-select').value;
+    const show = (el, v) => document.getElementById(el).classList.toggle('hidden', !v);
 
-    // Load dates for selected camera
-    async function loadDates() {
-        const cameraId = document.getElementById('camera-select').value;
-        const datesSection = document.getElementById('dates-section');
-        const timelineSection = document.getElementById('timeline-section');
-        const playerSection = document.getElementById('player-section');
-        const emptyState = document.getElementById('empty-state');
+    if (!id) { show('dates-section',0); show('timeline-section',0); show('player-section',0); show('empty-state',1); return; }
 
-        if (!cameraId) {
-            datesSection.classList.add('hidden');
-            timelineSection.classList.add('hidden');
-            playerSection.classList.add('hidden');
-            emptyState.classList.remove('hidden');
+    try {
+        const dates = await api(`/api/timeline/${id}/dates`);
+        const c = document.getElementById('dates-container');
+        show('empty-state', 0);
+
+        if (!dates.length) {
+            c.innerHTML = '<p class="text-sm text-slate-500 py-2">No recordings found — enable ⏺ continuous recording on this camera</p>';
+            show('dates-section',1); show('timeline-section',0); show('player-section',0);
             return;
         }
 
-        try {
-            const dates = await api('GET', `/api/timeline/${cameraId}/dates`);
-            const container = document.getElementById('dates-container');
-
-            if (dates.length === 0) {
-                container.innerHTML = '<span class="text-sm text-slate-500">No recordings found for this camera</span>';
-                datesSection.classList.remove('hidden');
-                timelineSection.classList.add('hidden');
-                playerSection.classList.add('hidden');
-                emptyState.classList.add('hidden');
-                return;
-            }
-
-            container.innerHTML = dates.map(d => {
-                const label = formatDate(d);
-                return `<button class="date-chip" onclick="selectDate('${d}')" data-date="${d}">${label}</button>`;
-            }).join('');
-
-            datesSection.classList.remove('hidden');
-            emptyState.classList.add('hidden');
-            document.getElementById('recording-count').textContent = `${dates.length} day${dates.length !== 1 ? 's' : ''} of recordings`;
-
-            // Auto-select most recent date
-            selectDate(dates[0]);
-        } catch (e) {
-            console.error('Failed to load dates', e);
-        }
-    }
-
-    // Select a date and load timeline
-    async function selectDate(dateStr) {
-        // Update active chip
-        document.querySelectorAll('.date-chip').forEach(c => c.classList.toggle('active', c.dataset.date === dateStr));
-
-        const cameraId = document.getElementById('camera-select').value;
-        try {
-            const data = await api('GET', `/api/timeline/${cameraId}/segments?date=${dateStr}`);
-            renderTimeline(data.hours);
-            document.getElementById('timeline-section').classList.remove('hidden');
-            document.getElementById('player-section').classList.remove('hidden');
-
-            // Flatten all segments for playback
-            allSegments = [];
-            Object.entries(data.hours).sort(([a],[b]) => a.localeCompare(b)).forEach(([h, segs]) => {
-                segs.forEach(s => { s._hour = h; allSegments.push(s); });
-            });
-
-            // Auto-select first hour with data
-            const firstHour = Object.keys(data.hours).sort()[0];
-            if (firstHour !== undefined) {
-                selectHour(firstHour, data.hours[firstHour]);
-            } else {
-                document.getElementById('segments-list').innerHTML = '<p class="text-sm text-slate-500">No segments for this date</p>';
-            }
-        } catch (e) {
-            console.error('Failed to load segments', e);
-        }
-    }
-
-    // Render 24-hour timeline bar
-    function renderTimeline(hours) {
-        const bar = document.getElementById('timeline-bar');
-        const labels = document.getElementById('timeline-labels');
-
-        let barHtml = '';
-        let labelHtml = '';
-        for (let h = 0; h < 24; h++) {
-            const hStr = String(h).padStart(2, '0');
-            const hasData = hours[hStr] && hours[hStr].length > 0;
-            const count = hasData ? hours[hStr].length : 0;
-            barHtml += `<div class="timeline-hour ${hasData ? 'has-data' : ''}"
-                data-hour="${hStr}"
-                onclick="selectHourFromBar('${hStr}')"
-                title="${hStr}:00 — ${count} segment${count !== 1 ? 's' : ''}">
-            </div>`;
-            // Show labels every 3 hours
-            const isMajor = h % 3 === 0;
-            if (isMajor) {
-                const left = (h / 24 * 100) + (100/48);
-                labelHtml += `<span class="hour-label ${isMajor ? 'major' : ''}" style="position:absolute;left:${left}%;">${hStr}:00</span>`;
-            }
-        }
-        bar.innerHTML = barHtml;
-        labels.innerHTML = labelHtml;
-    }
-
-    let _currentHours = {};
-    function selectHourFromBar(hStr) {
-        const cameraId = document.getElementById('camera-select').value;
-        const dateChip = document.querySelector('.date-chip.active');
-        if (!dateChip) return;
-        // Re-fetch segments to get the data
-        api('GET', `/api/timeline/${cameraId}/segments?date=${dateChip.dataset.date}`).then(data => {
-            _currentHours = data.hours;
-            const segs = data.hours[hStr] || [];
-            selectHour(hStr, segs);
-        });
-    }
-
-    // Select hour and show segments
-    function selectHour(hStr, segments) {
-        currentHour = hStr;
-        // Highlight timeline bar
-        document.querySelectorAll('.timeline-hour').forEach(el => {
-            el.classList.toggle('selected', el.dataset.hour === hStr);
-        });
-
-        document.getElementById('segment-hour-label').textContent = `(${hStr}:00 – ${hStr}:59)`;
-
-        const list = document.getElementById('segments-list');
-        if (!segments || segments.length === 0) {
-            list.innerHTML = '<p class="text-sm text-slate-500 py-4">No recordings this hour</p>';
-            return;
-        }
-
-        list.innerHTML = segments.map((seg, i) => {
-            const time = (seg.start_time || '').substring(11, 19) || '??:??:??';
-            const size = seg.file_size ? formatSize(seg.file_size) : '—';
-            const trigger = seg.trigger || 'manual';
-            const triggerBadge = trigger === 'manual'
-                ? '<span class="rounded bg-sky-500/20 px-1.5 py-0.5 text-[0.6rem] text-sky-400">manual</span>'
-                : trigger === 'motion'
-                    ? '<span class="rounded bg-amber-500/20 px-1.5 py-0.5 text-[0.6rem] text-amber-400">motion</span>'
-                    : trigger === 'continuous'
-                        ? '<span class="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[0.6rem] text-emerald-400">continuous</span>'
-                        : `<span class="rounded bg-slate-500/20 px-1.5 py-0.5 text-[0.6rem] text-slate-400">${trigger}</span>`;
-            const globalIdx = allSegments.findIndex(s => s.file_path === seg.file_path);
-            return `<div class="segment-item" data-idx="${globalIdx}" onclick="playSegment(${globalIdx})">
-                <span style="color:#4ade80;font-size:1.1rem;">▶</span>
-                <div class="flex-1">
-                    <div class="text-sm font-medium">${time}</div>
-                    <div class="flex items-center gap-2 text-xs text-slate-500">${size} ${triggerBadge}</div>
-                </div>
-            </div>`;
+        c.innerHTML = dates.map(d => {
+            const lbl = fmtDate(d);
+            return `<button class="date-chip" data-date="${d}" onclick="selectDate('${d}')">${lbl}</button>`;
         }).join('');
-    }
 
-    // Play a segment
-    function playSegment(idx) {
-        if (idx < 0 || idx >= allSegments.length) return;
-        currentSegmentIndex = idx;
-        const seg = allSegments[idx];
+        show('dates-section',1);
+        document.getElementById('recording-count').textContent = `${dates.length} day${dates.length>1?'s':''}`;
+        selectDate(dates[0]);
+    } catch(e) { console.error(e); }
+}
 
-        const player = document.getElementById('video-player');
-        const placeholder = document.getElementById('player-placeholder');
-        const nowPlaying = document.getElementById('now-playing');
+// --- Select Date ---
+async function selectDate(d) {
+    document.querySelectorAll('.date-chip').forEach(c => c.classList.toggle('active', c.dataset.date === d));
+    const id = document.getElementById('camera-select').value;
 
-        placeholder.classList.add('hidden');
-        player.classList.remove('hidden');
-        player.src = seg.playback_url;
-        player.play();
+    try {
+        const data = await api(`/api/timeline/${id}/segments?date=${d}`);
+        _hoursCache = data.hours;
+        renderTimeline(data.hours);
+        document.getElementById('timeline-section').classList.remove('hidden');
+        document.getElementById('player-section').classList.remove('hidden');
 
-        const time = (seg.start_time || '').substring(11, 19) || '';
-        nowPlaying.textContent = `Playing: ${time} — ${seg.filename}`;
-
-        // Auto-play next on end
-        player.onended = () => playNext();
-
-        // Highlight in list
-        document.querySelectorAll('.segment-item').forEach(el => {
-            el.classList.toggle('playing', parseInt(el.dataset.idx) === idx);
+        // Flatten segments
+        allSegments = [];
+        Object.keys(data.hours).sort().forEach(h => {
+            data.hours[h].forEach(s => { s._hour = h; allSegments.push(s); });
         });
+
+        document.getElementById('tl-summary').textContent =
+            `${data.total_segments} segment${data.total_segments!==1?'s':''} · ${Object.keys(data.hours).length} hour${Object.keys(data.hours).length!==1?'s':''}`;
+
+        // Select first hour with data
+        const first = Object.keys(data.hours).sort()[0];
+        if (first) selectHour(first); else {
+            document.getElementById('segments-list').innerHTML = '<p class="text-sm text-slate-500 py-6 text-center">No segments this day</p>';
+        }
+    } catch(e) { console.error(e); }
+}
+
+// --- Render Timeline ---
+function renderTimeline(hours) {
+    const bar = document.getElementById('tl-bar');
+    const labels = document.getElementById('tl-labels');
+    let barH = '', labH = '';
+
+    const now = new Date();
+    const nowH = now.getHours();
+    const nowFrac = (nowH + now.getMinutes()/60) / 24 * 100;
+
+    for (let h = 0; h < 24; h++) {
+        const hk = String(h).padStart(2,'0');
+        const segs = hours[hk];
+        const n = segs ? segs.length : 0;
+        const cls = n ? 'tl-cell has-data' : 'tl-cell';
+        barH += `<div class="${cls}" data-hour="${hk}" onclick="selectHour('${hk}')" title="${hk}:00 — ${n} segment${n!==1?'s':''}">
+            ${n ? `<span class="seg-count">${n}</span>` : ''}
+        </div>`;
+        const major = h % 3 === 0;
+        labH += `<span class="${major?'major':''}">${major ? hk+':00' : ''}</span>`;
+    }
+    bar.innerHTML = barH;
+    labels.innerHTML = labH;
+
+    // Now marker
+    const marker = document.createElement('div');
+    marker.className = 'tl-now';
+    marker.style.left = nowFrac + '%';
+    bar.parentElement.appendChild(marker);
+}
+
+// --- Select Hour ---
+function selectHour(hk) {
+    document.querySelectorAll('.tl-cell').forEach(c => c.classList.toggle('active', c.dataset.hour === hk));
+    const segs = _hoursCache[hk] || [];
+    document.getElementById('seg-hour-label').textContent = `${hk}:00–${hk}:59`;
+    document.getElementById('seg-count').textContent = `${segs.length} segment${segs.length!==1?'s':''}`;
+
+    const list = document.getElementById('segments-list');
+    if (!segs.length) {
+        list.innerHTML = '<p class="text-sm text-slate-500 py-6 text-center">No recordings this hour</p>';
+        return;
     }
 
-    function playPrev() {
-        if (currentSegmentIndex > 0) playSegment(currentSegmentIndex - 1);
+    list.innerHTML = segs.map(seg => {
+        const t = (seg.start_time||'').substring(11,19) || '??:??:??';
+        const sz = seg.file_size ? fmtSize(seg.file_size) : '—';
+        const tr = seg.trigger || 'manual';
+        const badge = `<span class="trigger-badge ${['manual','motion','continuous'].includes(tr)?tr:'other'}">${tr}</span>`;
+        const gi = allSegments.findIndex(s => s.file_path === seg.file_path);
+        return `<div class="seg-card" data-idx="${gi}" onclick="play(${gi})">
+            <div class="seg-play-icon"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg></div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm font-semibold tabular-nums">${t}</span>
+                    ${badge}
+                </div>
+                <div class="text-xs text-slate-500 truncate">${sz}${seg.end_time ? ' · '+duration(seg.start_time,seg.end_time) : ''}</div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// --- Playback ---
+function play(idx) {
+    if (idx < 0 || idx >= allSegments.length) return;
+    currentIndex = idx;
+    const seg = allSegments[idx];
+    const player = document.getElementById('video-player');
+    const ph = document.getElementById('player-placeholder');
+
+    ph.classList.add('hidden');
+    player.classList.remove('hidden');
+    player.src = seg.playback_url;
+    player.play().catch(() => {});
+
+    const t = (seg.start_time||'').substring(11,19) || '';
+    document.getElementById('now-playing').textContent = `▶ ${t} — ${seg.filename||''}`;
+    document.getElementById('seg-counter').textContent = `${idx+1} / ${allSegments.length}`;
+
+    player.onended = () => playNext();
+
+    // Update buttons
+    document.getElementById('btn-prev').disabled = idx <= 0;
+    document.getElementById('btn-next').disabled = idx >= allSegments.length - 1;
+
+    // Highlight
+    document.querySelectorAll('.seg-card').forEach(c => c.classList.toggle('playing', +c.dataset.idx === idx));
+
+    // Scroll into view
+    const active = document.querySelector('.seg-card.playing');
+    if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+function playPrev() { if (currentIndex > 0) play(currentIndex - 1); }
+function playNext() { if (currentIndex < allSegments.length - 1) play(currentIndex + 1); }
+
+// --- Helpers ---
+function fmtDate(ds) {
+    const d = new Date(ds + 'T00:00:00');
+    const today = new Date(); const yd = new Date(today); yd.setDate(today.getDate()-1);
+    const dayName = d.toLocaleDateString('en-US',{weekday:'short'});
+    const monthDay = d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    if (d.toDateString() === today.toDateString()) return `<span class="day-name">Today</span>${monthDay}`;
+    if (d.toDateString() === yd.toDateString()) return `<span class="day-name">Yesterday</span>${monthDay}`;
+    return `<span class="day-name">${dayName}</span>${monthDay}`;
+}
+
+function fmtSize(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+    if (b < 1073741824) return (b/1048576).toFixed(1) + ' MB';
+    return (b/1073741824).toFixed(1) + ' GB';
+}
+
+function duration(start, end) {
+    if (!start || !end) return '';
+    const s = new Date(start), e = new Date(end);
+    const sec = Math.round((e - s) / 1000);
+    if (sec < 60) return sec + 's';
+    if (sec < 3600) return Math.floor(sec/60) + 'm ' + (sec%60) + 's';
+    return Math.floor(sec/3600) + 'h ' + Math.floor((sec%3600)/60) + 'm';
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (e.key === 'ArrowLeft') playPrev();
+    if (e.key === 'ArrowRight') playNext();
+    if (e.key === ' ' && currentIndex >= 0) {
+        e.preventDefault();
+        const v = document.getElementById('video-player');
+        v.paused ? v.play() : v.pause();
     }
+});
 
-    function playNext() {
-        if (currentSegmentIndex < allSegments.length - 1) playSegment(currentSegmentIndex + 1);
-    }
-
-    // Helpers
-    function formatDate(dateStr) {
-        const d = new Date(dateStr + 'T00:00:00');
-        const today = new Date();
-        const yesterday = new Date(today);
-        yesterday.setDate(today.getDate() - 1);
-
-        if (d.toDateString() === today.toDateString()) return 'Today';
-        if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
-        return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    }
-
-    function formatSize(bytes) {
-        if (bytes < 1024) return bytes + ' B';
-        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-        if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
-        return (bytes / 1073741824).toFixed(1) + ' GB';
-    }
-
-    // Init
-    loadCameras();
-    </script>
+init();
+</script>
 </body>
 </html>
