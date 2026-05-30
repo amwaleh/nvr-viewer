@@ -127,6 +127,10 @@ class EventProcessor:
         self.fps = fps
         self.buffer_max_width = buffer_max_width
         self._last_events: dict[str, datetime] = {}
+        # Track last bbox per key to detect stationary objects
+        self._last_bboxes: dict[str, tuple] = {}
+        # Count consecutive times an object is seen in same spot
+        self._static_counts: dict[str, int] = {}
         # Per-camera rolling frame buffer for pre-event capture
         self._frame_buffers: dict[int, deque] = {}
         # Per-camera buffer frame counter for skip logic
@@ -187,6 +191,41 @@ class EventProcessor:
         d.mkdir(parents=True, exist_ok=True)
         return d
 
+    @staticmethod
+    def _iou(box1: tuple, box2: tuple) -> float:
+        """Intersection over Union for (x, y, w, h) bboxes."""
+        x1, y1, w1, h1 = box1
+        x2, y2, w2, h2 = box2
+        xa = max(x1, x2)
+        ya = max(y1, y2)
+        xb = min(x1 + w1, x2 + w2)
+        yb = min(y1 + h1, y2 + h2)
+        inter = max(0, xb - xa) * max(0, yb - ya)
+        union = w1 * h1 + w2 * h2 - inter
+        return inter / max(union, 1)
+
+    def _is_stationary(self, key: str, bbox: tuple) -> bool:
+        """Check if object is stationary (same position as last detection).
+        Suppresses after 2 consecutive detections in the same spot.
+        """
+        if key not in self._last_bboxes:
+            self._last_bboxes[key] = bbox
+            self._static_counts[key] = 1
+            return False
+
+        iou = self._iou(self._last_bboxes[key], bbox)
+        self._last_bboxes[key] = bbox
+
+        if iou > 0.6:  # >60% overlap = same position
+            self._static_counts[key] = self._static_counts.get(key, 0) + 1
+            if self._static_counts[key] >= 2:
+                return True
+        else:
+            # Object moved — reset counter
+            self._static_counts[key] = 1
+
+        return False
+
     def process(self, camera_id: int, camera_name: str, frame: np.ndarray,
                 detections: list[dict]) -> list[dict]:
         """Process detections: deduplicate, save clip + thumbnail, log to DB."""
@@ -201,9 +240,19 @@ class EventProcessor:
             key = f"{camera_name}:{det['type']}:{det.get('label', '')}"
             now = datetime.now()
 
+            # Cooldown check — longer for objects/faces (they persist in scene)
             if key in self._last_events:
                 elapsed = (now - self._last_events[key]).total_seconds()
-                if elapsed < self.cooldown:
+                base_cooldown = self.cooldown
+                if det["type"] in ("object", "person", "vehicle", "animal", "face"):
+                    base_cooldown = max(self.cooldown, 60)  # at least 60s for static types
+                if elapsed < base_cooldown:
+                    continue
+
+            # Suppress stationary objects (parked cars, furniture, etc.)
+            if det["type"] in ("object", "person", "vehicle", "animal", "face"):
+                if self._is_stationary(key, det["bbox"]):
+                    logger.debug(f"Suppressed stationary {det.get('label', det['type'])} on {camera_name}")
                     continue
 
             self._last_events[key] = now
