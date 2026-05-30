@@ -197,6 +197,168 @@ class TestRecordingsFlow:
         assert resp.status_code == 404
 
 
+class TestRecordingsCRUD:
+    """E2E: Create a real recording file → list → stream → download → delete → verify gone."""
+
+    @pytest.mark.anyio
+    async def test_recording_full_lifecycle(self, client):
+        from nvr_viewer.web.state import RECORDINGS_DIR
+
+        # Create a real test mp4 file in the recordings directory
+        RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+        test_file = RECORDINGS_DIR / "e2e_test_recording.mp4"
+        test_file.write_bytes(b"\x00\x00\x00\x1c\x66\x74\x79\x70" + b"\x00" * 100)  # minimal mp4-like
+
+        try:
+            # 1. List should include our file
+            resp = await client.get("/api/recordings")
+            assert resp.status_code == 200
+            recordings = resp.json()
+            names = [r["name"] for r in recordings]
+            assert "e2e_test_recording.mp4" in names
+
+            # Verify response shape has no server paths
+            rec = next(r for r in recordings if r["name"] == "e2e_test_recording.mp4")
+            assert "name" in rec
+            assert "size" in rec
+            assert "size_mb" in rec
+            assert "modified" in rec
+            assert "path" not in rec  # server path must not be exposed
+
+            # 2. Stream (inline playback) should return 200
+            resp = await client.get("/api/recordings/e2e_test_recording.mp4")
+            assert resp.status_code == 200
+            assert resp.headers["content-type"] == "video/mp4"
+            # No content-disposition means inline (not forced download)
+            assert "attachment" not in resp.headers.get("content-disposition", "")
+
+            # 3. Download should return 200 with attachment disposition
+            resp = await client.get("/api/recordings/e2e_test_recording.mp4/download")
+            assert resp.status_code == 200
+            assert "attachment" in resp.headers.get("content-disposition", "")
+            assert "e2e_test_recording.mp4" in resp.headers["content-disposition"]
+
+            # 4. Delete should succeed
+            resp = await client.delete("/api/recordings/e2e_test_recording.mp4")
+            assert resp.status_code == 200
+            assert "Deleted" in resp.json()["message"]
+
+            # 5. File should be gone from disk
+            assert not test_file.exists()
+
+            # 6. List should no longer include it
+            resp = await client.get("/api/recordings")
+            names = [r["name"] for r in resp.json()]
+            assert "e2e_test_recording.mp4" not in names
+
+            # 7. Attempting to delete again should 404
+            resp = await client.delete("/api/recordings/e2e_test_recording.mp4")
+            assert resp.status_code == 404
+
+        finally:
+            # Cleanup if test failed before delete
+            if test_file.exists():
+                test_file.unlink()
+
+    @pytest.mark.anyio
+    async def test_recording_delete_multiple_sequential(self, client):
+        """Create multiple recordings, delete each, verify independent."""
+        from nvr_viewer.web.state import RECORDINGS_DIR
+        RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+
+        files = []
+        for i in range(3):
+            f = RECORDINGS_DIR / f"e2e_multi_{i}.mp4"
+            f.write_bytes(b"\x00" * 50)
+            files.append(f)
+
+        try:
+            # All three should be listed
+            resp = await client.get("/api/recordings")
+            names = [r["name"] for r in resp.json()]
+            for f in files:
+                assert f.name in names
+
+            # Delete the middle one
+            resp = await client.delete("/api/recordings/e2e_multi_1.mp4")
+            assert resp.status_code == 200
+            assert not files[1].exists()
+
+            # Others still exist
+            resp = await client.get("/api/recordings")
+            names = [r["name"] for r in resp.json()]
+            assert "e2e_multi_0.mp4" in names
+            assert "e2e_multi_1.mp4" not in names
+            assert "e2e_multi_2.mp4" in names
+
+            # Delete remaining
+            for name in ["e2e_multi_0.mp4", "e2e_multi_2.mp4"]:
+                resp = await client.delete(f"/api/recordings/{name}")
+                assert resp.status_code == 200
+
+            # All gone
+            resp = await client.get("/api/recordings")
+            names = [r["name"] for r in resp.json()]
+            for f in files:
+                assert f.name not in names
+
+        finally:
+            for f in files:
+                if f.exists():
+                    f.unlink()
+
+    @pytest.mark.anyio
+    async def test_recording_path_traversal_blocked(self, client):
+        """Path traversal attempts should be rejected."""
+        # Payloads with slashes: FastAPI routes them to non-existent paths → 404
+        slash_payloads = [
+            "../etc/passwd",
+            "subdir/file.mp4",
+            "../../secret.mp4",
+            "....//....//etc/passwd",
+        ]
+        for payload in slash_payloads:
+            resp = await client.get(f"/api/recordings/{payload}")
+            assert resp.status_code in (400, 404), f"Slash traversal not blocked: {payload}"
+
+        # Payloads our guard catches directly → 400
+        guard_payloads = [
+            "..\\windows\\system32",
+            "..secret.mp4",       # contains ".."
+            "...mp4",             # contains ".."
+        ]
+        for payload in guard_payloads:
+            for method in ["get", "delete"]:
+                func = getattr(client, method)
+                resp = await func(f"/api/recordings/{payload}")
+                assert resp.status_code == 400, f"{method.upper()} traversal not blocked: {payload}"
+
+    @pytest.mark.anyio
+    async def test_recording_special_characters_in_name(self, client):
+        """Filenames with spaces and special chars should work."""
+        from nvr_viewer.web.state import RECORDINGS_DIR
+        RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+
+        test_name = "cam 1 - 2026-05-30 13_45_00.mp4"
+        test_file = RECORDINGS_DIR / test_name
+        test_file.write_bytes(b"\x00" * 50)
+
+        try:
+            # Should appear in listing
+            resp = await client.get("/api/recordings")
+            names = [r["name"] for r in resp.json()]
+            assert test_name in names
+
+            # Should be deletable via URL-encoded name
+            from urllib.parse import quote
+            resp = await client.delete(f"/api/recordings/{quote(test_name)}")
+            assert resp.status_code == 200
+            assert not test_file.exists()
+        finally:
+            if test_file.exists():
+                test_file.unlink()
+
+
 class TestStorageSettingsFlow:
     """E2E: Get storage → change to temp dir → verify → reject relative path."""
 
