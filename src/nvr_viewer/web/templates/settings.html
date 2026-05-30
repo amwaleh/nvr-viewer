@@ -90,7 +90,7 @@
         <!-- System Status -->
         <section class="rounded-2xl border border-nvr-border bg-nvr-card/95 p-5 shadow-lg">
             <h2 class="mb-4 text-lg font-semibold text-white">System Status</h2>
-            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
                 <div class="rounded-xl border border-white/10 bg-slate-950/35 p-3 text-center">
                     <div id="stat-cameras" class="text-2xl font-bold text-white">—</div>
                     <div class="mt-1 text-xs uppercase tracking-wider text-slate-400">Cameras</div>
@@ -106,6 +106,10 @@
                 <div class="rounded-xl border border-white/10 bg-slate-950/35 p-3 text-center">
                     <div id="stat-disk" class="text-2xl font-bold text-white">—</div>
                     <div class="mt-1 text-xs uppercase tracking-wider text-slate-400">Disk Free</div>
+                </div>
+                <div class="rounded-xl border border-white/10 bg-slate-950/35 p-3 text-center">
+                    <div id="stat-nvr-used" class="text-2xl font-bold text-white">—</div>
+                    <div class="mt-1 text-xs uppercase tracking-wider text-slate-400">NVR Usage</div>
                 </div>
             </div>
         </section>
@@ -398,6 +402,8 @@
             document.getElementById('stat-recordings').textContent = s.recordings_count;
             if (s.disk) {
                 document.getElementById('stat-disk').textContent = s.disk.disk_free_percent + '%';
+                const nvrGb = s.disk.storage_used_gb || 0;
+                document.getElementById('stat-nvr-used').textContent = nvrGb < 1 ? (nvrGb * 1024).toFixed(0) + ' MB' : nvrGb.toFixed(1) + ' GB';
                 const usedPct = 100 - s.disk.disk_free_percent;
                 const bar = document.getElementById('disk-bar');
                 bar.style.width = usedPct + '%';
