@@ -107,10 +107,11 @@ class FaceDetector:
     YUNET_URL = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
     YUNET_FILE = "face_detection_yunet_2023mar.onnx"
 
-    def __init__(self, confidence: float = 0.5):
+    def __init__(self, confidence: float = 0.7):
         self.confidence = confidence
         self._detector = None
         self._use_cascade = False
+        self._min_face_size = 60  # minimum face width/height in pixels
 
     def _ensure_detector(self):
         if self._detector is not None:
@@ -137,8 +138,8 @@ class FaceDetector:
                     "",
                     (320, 320),
                     self.confidence,
-                    0.3,  # NMS threshold
-                    5000  # top_k
+                    0.4,  # NMS threshold — stricter to merge overlaps
+                    500   # top_k — reduced to avoid low-quality candidates
                 )
                 self._use_cascade = False
                 logger.info("Using YuNet face detector (accurate)")
@@ -166,14 +167,20 @@ class FaceDetector:
     
     def _detect_cascade(self, frame: np.ndarray) -> list[dict]:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = self._detector.detectMultiScale(gray, 1.1, 5, minSize=(30, 30))
+        faces = self._detector.detectMultiScale(gray, 1.1, 6, minSize=(self._min_face_size, self._min_face_size))
         
-        return [{
-            "type": "face",
-            "label": "face",
-            "confidence": 0.8,  # Cascades don't provide confidence
-            "bbox": (int(x), int(y), int(w), int(h)),
-        } for (x, y, w, h) in faces]
+        detections = []
+        for (x, y, w, h) in faces:
+            aspect = w / max(h, 1)
+            if aspect < 0.5 or aspect > 2.0:
+                continue
+            detections.append({
+                "type": "face",
+                "label": "face",
+                "confidence": 0.8,
+                "bbox": (int(x), int(y), int(w), int(h)),
+            })
+        return detections
     
     def _detect_dnn(self, frame: np.ndarray) -> list[dict]:
         h, w = frame.shape[:2]
@@ -183,9 +190,29 @@ class FaceDetector:
         if faces is None:
             return []
         
-        return [{
-            "type": "face",
-            "label": "face",
-            "confidence": round(float(face[14]), 3) if len(face) > 14 else 0.8,
-            "bbox": (int(face[0]), int(face[1]), int(face[2]), int(face[3])),
-        } for face in faces]
+        detections = []
+        for face in faces:
+            fx, fy, fw, fh = int(face[0]), int(face[1]), int(face[2]), int(face[3])
+            conf = round(float(face[14]), 3) if len(face) > 14 else 0.8
+
+            # Skip tiny faces — floor tiles, distant patterns
+            if fw < self._min_face_size or fh < self._min_face_size:
+                continue
+
+            # Faces are roughly square — reject extreme aspect ratios (textures/edges)
+            aspect = fw / max(fh, 1)
+            if aspect < 0.5 or aspect > 2.0:
+                continue
+
+            # Skip faces detected at frame edges (partial/noise)
+            if fx < 5 or fy < 5 or (fx + fw) > (w - 5) or (fy + fh) > (h - 5):
+                continue
+
+            detections.append({
+                "type": "face",
+                "label": "face",
+                "confidence": conf,
+                "bbox": (fx, fy, fw, fh),
+            })
+        
+        return detections
