@@ -72,7 +72,7 @@ class NVRApp {
             }
             const nextFeedState = new Map();
             cameras.forEach((camera) => {
-                nextFeedState.set(camera.id, this.feedState.has(camera.id) ? this.feedState.get(camera.id) : true);
+                nextFeedState.set(camera.id, this.feedState.has(camera.id) ? this.feedState.get(camera.id) : camera.status === 'streaming');
             });
             this.feedState = nextFeedState;
             this.cameras = cameras;
@@ -383,7 +383,7 @@ class NVRApp {
                         <div class="camera-meta" style="flex:1;">
                             <span style="color:var(--text-muted);font-size:0.85rem;">Stream stopped</span>
                         </div>
-                        <button class="btn" type="button" data-action="start-feed" data-id="${camera.id}" data-role="stream-button" style="min-height:36px;padding:0.4rem 1rem;font-size:0.85rem;flex-direction:row;gap:0.4rem;">
+                        <button class="btn" type="button" data-action="start-feed" data-id="${camera.id}" data-role="stream-button" style="min-height:36px;padding:0.4rem 1rem;font-size:0.85rem;flex-direction:row;gap:0.4rem;background:#22c55e;color:#fff;">
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg> Start Stream
                         </button>
                         `}
@@ -480,7 +480,7 @@ class NVRApp {
                     <div class="action-row" style="align-items:center;gap:6px;">
                         ${enabled
                             ? `<button class="btn-danger" type="button" data-action="disconnect-camera" data-id="${camera.id}" data-role="stream-toggle-button" style="min-height:32px;padding:0.3rem 0.7rem;font-size:0.8rem;">⏹ Stop</button>`
-                            : `<button class="btn" type="button" data-action="connect-camera" data-id="${camera.id}" data-role="stream-toggle-button" style="min-height:32px;padding:0.3rem 0.7rem;font-size:0.8rem;">▶ Start</button>`
+                            : `<button class="btn" type="button" data-action="connect-camera" data-id="${camera.id}" data-role="stream-toggle-button" style="min-height:32px;padding:0.3rem 0.7rem;font-size:0.8rem;background:#22c55e;color:#fff;">▶ Start</button>`
                         }
                         <label class="cam-det-toggle" title="Motion detection" style="margin-left:auto;">
                             <input type="checkbox" ${motionOn ? 'checked' : ''} onchange="window._nvrApp.saveCameraDetection(${camera.id},'motion',this.checked)">
