@@ -353,10 +353,10 @@ class NVRApp {
                                 ${objectsOn ? '<span class="det-ind on">🚗</span>' : '<span class="det-ind off">🚗</span>'}
                                 ${facesOn ? '<span class="det-ind on">😶</span>' : '<span class="det-ind off">😶</span>'}
                             </div>
+                            <span class="status-badge ${this.getStatusClass(state.status)}" data-role="status-badge">${escapeHtml(state.status)}</span>
                             ${enabled ? `<button class="btn-ghost focus-btn" type="button" onclick="window._openCameraFocus(${camera.id},'${escapeHtml(camera.name).replace(/'/g, "\\'")}')" title="Enlarge">
                                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4"/></svg>
                             </button>` : ''}
-                            <span class="status-badge ${this.getStatusClass(state.status)}" data-role="status-badge">${escapeHtml(state.status)}</span>
                         </div>
                     </div>
                     ${enabled
@@ -469,36 +469,30 @@ class NVRApp {
             const isCustom = String(camera.id) in camDetection;
 
             return `
-                <div class="list-card" data-camera-list-item="${camera.id}" style="position:relative;">
-                    <div class="list-card-row">
-                        <div class="list-card-meta">
-                            <strong>${escapeHtml(camera.name)}${typeBadge}</strong>
-                            <small>${hostInfo}</small>
+                <div class="list-card" data-camera-list-item="${camera.id}">
+                    <div class="list-card-row" style="align-items:center;">
+                        <div class="list-card-meta" style="flex:1;min-width:0;">
+                            <strong style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${escapeHtml(camera.name)}${typeBadge}
+                                <span class="status-badge ${this.getStatusClass(state.status)}" data-role="status-badge" style="font-size:.65rem;padding:1px 6px;">${escapeHtml(state.status)}</span>
+                            </strong>
+                            <small style="opacity:.6;">${hostInfo}</small>
                         </div>
-                        <span class="status-badge ${this.getStatusClass(state.status)}" data-role="status-badge">${escapeHtml(state.status)}</span>
+                        <div style="display:flex;align-items:center;gap:4px;">
+                            ${enabled
+                                ? `<button class="icon-btn" type="button" data-action="disconnect-camera" data-id="${camera.id}" data-role="stream-toggle-button" title="Stop stream" style="color:#f87171;"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg></button>`
+                                : `<button class="icon-btn" type="button" data-action="connect-camera" data-id="${camera.id}" data-role="stream-toggle-button" title="Start stream" style="color:#4ade80;"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg></button>`
+                            }
+                            <button class="icon-btn" type="button" data-action="edit-camera" data-id="${camera.id}" title="Edit" style="opacity:.5;font-size:13px;">✎</button>
+                            <button class="icon-btn" type="button" data-action="delete-camera" data-id="${camera.id}" title="Delete" style="opacity:.5;color:#e74c3c;font-size:13px;">🗑</button>
+                        </div>
                     </div>
-                    <div class="action-row" style="align-items:center;gap:6px;">
-                        ${enabled
-                            ? `<button class="btn-danger" type="button" data-action="disconnect-camera" data-id="${camera.id}" data-role="stream-toggle-button" style="min-height:32px;padding:0.3rem 0.7rem;font-size:0.8rem;">⏹ Stop</button>`
-                            : `<button class="btn" type="button" data-action="connect-camera" data-id="${camera.id}" data-role="stream-toggle-button" style="min-height:32px;padding:0.3rem 0.7rem;font-size:0.8rem;background:#22c55e;color:#fff;">▶ Start</button>`
-                        }
-                        <label class="cam-det-toggle" title="Motion detection" style="margin-left:auto;">
-                            <input type="checkbox" ${motionOn ? 'checked' : ''} onchange="window._nvrApp.saveCameraDetection(${camera.id},'motion',this.checked)">
-                            <span>🏃</span>
-                        </label>
-                        <label class="cam-det-toggle" title="Object detection">
-                            <input type="checkbox" ${objectsOn ? 'checked' : ''} onchange="window._nvrApp.saveCameraDetection(${camera.id},'objects',this.checked)">
-                            <span>🚗</span>
-                        </label>
-                        <label class="cam-det-toggle" title="Face detection">
-                            <input type="checkbox" ${facesOn ? 'checked' : ''} onchange="window._nvrApp.saveCameraDetection(${camera.id},'faces',this.checked)">
-                            <span>😶</span>
-                        </label>
-                        ${isCustom ? `<button class="btn-ghost" style="font-size:.65rem;padding:1px 4px;opacity:.5;" onclick="window._nvrApp.resetCameraDetection(${camera.id})" title="Reset to defaults">↺</button>` : ''}
-                    </div>
-                    <div style="position:absolute;bottom:8px;right:8px;display:flex;gap:6px;">
-                        <button class="btn-ghost" type="button" data-action="edit-camera" data-id="${camera.id}" title="Edit" style="font-size:14px;padding:2px 6px;opacity:.6;">&#9998;</button>
-                        <button class="btn-ghost" type="button" data-action="delete-camera" data-id="${camera.id}" title="Delete" style="font-size:14px;padding:2px 6px;opacity:.6;color:#e74c3c;">&#128465;</button>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <div class="det-indicators" title="Active detections" style="gap:3px;">
+                            <span class="det-ind ${motionOn ? 'on' : 'off'}" style="cursor:pointer;font-size:.65rem;padding:1px 5px;" onclick="window._nvrApp.saveCameraDetection(${camera.id},'motion',${!motionOn})" title="Motion: click to toggle">🏃</span>
+                            <span class="det-ind ${objectsOn ? 'on' : 'off'}" style="cursor:pointer;font-size:.65rem;padding:1px 5px;" onclick="window._nvrApp.saveCameraDetection(${camera.id},'objects',${!objectsOn})" title="Objects: click to toggle">🚗</span>
+                            <span class="det-ind ${facesOn ? 'on' : 'off'}" style="cursor:pointer;font-size:.65rem;padding:1px 5px;" onclick="window._nvrApp.saveCameraDetection(${camera.id},'faces',${!facesOn})" title="Faces: click to toggle">😶</span>
+                        </div>
+                        ${isCustom ? `<span style="font-size:.6rem;opacity:.4;cursor:pointer;" onclick="window._nvrApp.resetCameraDetection(${camera.id})" title="Reset to defaults">↺</span>` : ''}
                     </div>
                 </div>
             `;
