@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from ..state import (db, creds, scanner, active_streams, detection_settings,
-                     RECORDINGS_DIR)
+                     RECORDINGS_DIR, storage_manager)
 from ...network.sdcard import SDCardAccess
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,7 @@ async def system_status():
         "recordings_count": rec_count,
         "streams": streams,
         "detection": detection_settings,
+        "disk": storage_manager.get_disk_status(),
     }
 
 

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import cameras, recordings, events, detection, settings, system
+from .routers import cameras, recordings, events, detection, settings, system, notifications
 
 logger = logging.getLogger(__name__)
 
@@ -58,3 +58,4 @@ app.include_router(events.router)
 app.include_router(detection.router)
 app.include_router(settings.router)
 app.include_router(system.router)
+app.include_router(notifications.router)

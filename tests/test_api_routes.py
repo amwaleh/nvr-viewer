@@ -69,6 +69,10 @@ EXPECTED_ROUTES = [
     ("DELETE", "/api/detection/{camera_id}"),
     ("GET", "/api/settings/storage"),
     ("POST", "/api/settings/storage"),
+    ("POST", "/api/settings/disk-guard"),
+    ("GET", "/api/notifications"),
+    ("POST", "/api/notifications"),
+    ("POST", "/api/notifications/test"),
 ]
 
 
@@ -96,8 +100,8 @@ class TestRouteInventory:
 
     def test_no_missing_routes(self):
         """Sanity: expected route count matches."""
-        assert len(EXPECTED_ROUTES) == 34, \
-            f"Expected 34 routes, got {len(EXPECTED_ROUTES)}"
+        assert len(EXPECTED_ROUTES) == 38, \
+            f"Expected 38 routes, got {len(EXPECTED_ROUTES)}"
 
 
 # ============================================================

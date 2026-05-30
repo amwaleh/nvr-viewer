@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..state import creds, update_storage_dir
+from ..state import creds, update_storage_dir, storage_manager
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +48,13 @@ async def delete_credentials(host: str):
 
 @router.get("/settings/storage")
 async def get_storage_settings():
-    """Get current storage directory."""
-    from ..state import STORAGE_DIR
-    return {"storage_dir": str(STORAGE_DIR)}
+    """Get current storage directory and disk status."""
+    from ..state import STORAGE_DIR, min_free_percent
+    return {
+        "storage_dir": str(STORAGE_DIR),
+        "min_free_percent": min_free_percent,
+        "disk": storage_manager.get_disk_status(),
+    }
 
 
 @router.post("/settings/storage")
@@ -61,3 +65,22 @@ async def set_storage_settings(settings: StorageSettings):
         raise HTTPException(400, "Storage directory must be an absolute path")
     update_storage_dir(new_dir)
     return {"message": "Storage directory updated", "storage_dir": str(new_dir)}
+
+
+class DiskGuardSettings(BaseModel):
+    min_free_percent: int
+
+
+@router.post("/settings/disk-guard")
+async def set_disk_guard(settings: DiskGuardSettings):
+    """Update the minimum free disk space threshold (5-80%)."""
+    import nvr_viewer.web.state as st
+    pct = max(5, min(80, settings.min_free_percent))
+    st.min_free_percent = pct
+    st.storage_manager.min_free_percent = pct
+    st.save_settings()
+    return {
+        "message": f"Disk guard set to {pct}% minimum free",
+        "min_free_percent": pct,
+        "disk": storage_manager.get_disk_status(),
+    }
