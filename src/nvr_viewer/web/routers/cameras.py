@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel
 
-from ..state import db, active_streams, RECORDINGS_DIR
+from ..state import db, creds, active_streams, RECORDINGS_DIR
 from ..streaming import start_stream, stop_stream
 from ...core.rtsp_client import CameraConfig
 from ...core.recorder import Recorder
@@ -60,8 +60,9 @@ async def list_cameras():
 async def add_camera(cam: CameraAdd):
     cam_id = db.add_camera(
         name=cam.name, host=cam.host, port=cam.port,
-        path=cam.path, username=cam.username, password=cam.password,
-        camera_type=cam.type, stream_url=cam.stream_url)
+        path=cam.path, camera_type=cam.type, stream_url=cam.stream_url)
+    if cam.password:
+        creds.set(cam.host, cam.username, cam.password)
     return {"id": cam_id, "message": f"Camera '{cam.name}' added"}
 
 

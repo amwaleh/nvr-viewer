@@ -4,11 +4,23 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..state import (db, creds, STORAGE_DIR, update_storage_dir)
+from ..state import creds, update_storage_dir
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["settings"])
+
+
+# --- Models ---
+
+class CredentialSet(BaseModel):
+    host: str
+    username: str = "admin"
+    password: str = ""
+
+
+class StorageSettings(BaseModel):
+    storage_dir: str
 
 
 # --- Credentials ---
@@ -31,16 +43,6 @@ async def delete_credentials(host: str):
 
 
 # --- Storage ---
-
-class StorageSettings(BaseModel):
-    storage_dir: str
-
-
-class CredentialSet(BaseModel):
-    host: str
-    username: str = "admin"
-    password: str = ""
-
 
 @router.get("/settings/storage")
 async def get_storage_settings():

@@ -3,7 +3,7 @@ import logging
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 
-from ..state import (db, scanner, active_streams, detection_settings,
+from ..state import (db, creds, scanner, active_streams, detection_settings,
                      RECORDINGS_DIR)
 from ...network.sdcard import SDCardAccess
 
@@ -43,8 +43,10 @@ async def system_status():
 @router.get("/scan")
 async def scan_network(subnet: Optional[str] = None):
     """Scan the network for cameras."""
-    results = scanner.scan(subnet)
-    return results
+    cameras = scanner.discover_cameras(subnet)
+    for cam in cameras:
+        cam["has_credentials"] = creds.get(cam["host"]) is not None
+    return cameras
 
 
 # --- SD Card ---
@@ -61,11 +63,19 @@ async def list_sdcard_files(camera_id: int):
         raise HTTPException(404, "Camera not found")
 
     sd = SDCardAccess(cam["host"],
-                      username=cam.get("username", "admin"),
-                      password=cam.get("password", ""))
+                      username=creds.get(cam["host"])["username"] if creds.get(cam["host"]) else "admin",
+                      password=creds.get(cam["host"])["password"] if creds.get(cam["host"]) else "")
     try:
         files = sd.list_files()
-        return {"camera": cam["name"], "host": cam["host"], "files": files}
+        if not files:
+            return {
+                "camera": cam["name"], "host": cam["host"], "files": [],
+                "message": "SD card listing not available for this camera. "
+                           "Yoosee cameras use a proprietary protocol for SD card access. "
+                           "Use the Record feature to save streams locally instead.",
+                "supported": False,
+            }
+        return {"camera": cam["name"], "host": cam["host"], "files": files, "supported": True}
     except Exception as e:
         raise HTTPException(500, f"SD card access failed: {e}")
 
@@ -83,8 +93,8 @@ async def download_sdcard_file(camera_id: int,
         raise HTTPException(404, "Camera not found")
 
     sd = SDCardAccess(cam["host"],
-                      username=cam.get("username", "admin"),
-                      password=cam.get("password", ""))
+                      username=creds.get(cam["host"])["username"] if creds.get(cam["host"]) else "admin",
+                      password=creds.get(cam["host"])["password"] if creds.get(cam["host"]) else "")
     try:
         local_name = remote_path.replace("/", "_").replace("\\", "_")
         local_path = str(RECORDINGS_DIR / f"sdcard_{cam['host']}_{local_name}")
