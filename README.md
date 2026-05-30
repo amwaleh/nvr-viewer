@@ -63,6 +63,9 @@ Open **http://localhost:8080** in your browser.
 | `GET/POST/DELETE` | `/api/detection/{id}` | Per-camera detection |
 | `GET/POST` | `/api/credentials` | Credential management |
 | `GET/POST` | `/api/settings/storage` | Storage directory config |
+| `POST` | `/api/settings/disk-guard` | Disk space threshold |
+| `GET/POST` | `/api/notifications` | Notification settings |
+| `POST` | `/api/notifications/test` | Send a test notification |
 
 **Web UI features:**
 
@@ -140,6 +143,86 @@ nssm status nvr-viewer
 # macOS
 launchctl list com.nvr-viewer
 ```
+
+### Notifications
+
+NVR Viewer can alert you via **email** (SMTP) and/or **webhook** (Slack, Discord, Teams) when important events occur.
+
+#### Supported Events
+
+| Event | Trigger |
+|-------|---------|
+| **Detection** | Person, vehicle, face, or motion detected |
+| **Camera disconnect** | Camera stream drops unexpectedly |
+| **Disk warning** | Storage falls below the free-space threshold |
+| **Recording paused** | Recording auto-paused due to critically low disk (<2 GB) |
+
+#### Setup via API
+
+```bash
+# Configure email notifications
+curl -X POST http://localhost:8080/api/notifications \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "smtp_user": "you@gmail.com",
+    "smtp_password": "app-password",
+    "smtp_use_tls": true,
+    "email_to": "alerts@example.com"
+  }'
+
+# Configure webhook (Slack / Discord / Teams)
+curl -X POST http://localhost:8080/api/notifications \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "webhook_url": "https://hooks.slack.com/services/T.../B.../xxx"
+  }'
+
+# Send a test notification
+curl -X POST http://localhost:8080/api/notifications/test
+```
+
+#### Configuration Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | bool | `false` | Master switch for all notifications |
+| `smtp_host` | string | `""` | SMTP server hostname |
+| `smtp_port` | int | `587` | SMTP port (587 for STARTTLS, 465 for SSL) |
+| `smtp_user` | string | `""` | SMTP username / sender address |
+| `smtp_password` | string | `""` | SMTP password or app password |
+| `smtp_use_tls` | bool | `true` | Use STARTTLS encryption |
+| `email_to` | string | `""` | Recipient email address |
+| `webhook_url` | string | `""` | Webhook endpoint URL |
+| `notify_on_detection` | bool | `true` | Alert on AI detections |
+| `notify_detection_types` | list | `["person","vehicle"]` | Which detection types trigger alerts |
+| `notify_on_camera_disconnect` | bool | `true` | Alert when a camera goes offline |
+| `notify_on_disk_warning` | bool | `true` | Alert when disk space is low |
+| `notify_on_recording_paused` | bool | `true` | Alert when recording auto-pauses |
+| `cooldown_seconds` | int | `60` | Minimum seconds between repeated alerts of the same type |
+
+#### Gmail Setup
+
+1. Enable [2-Step Verification](https://myaccount.google.com/security) on your Google account
+2. Generate an **App Password** at https://myaccount.google.com/apppasswords
+3. Use `smtp.gmail.com`, port `587`, your Gmail as `smtp_user`, and the app password as `smtp_password`
+
+#### Webhook Formats
+
+The webhook payload is compatible with **Slack**, **Discord**, and **Microsoft Teams** Incoming Webhooks:
+
+```json
+{
+  "text": "🚨 NVR Alert: Person detected on Front Door",
+  "username": "NVR Viewer",
+  "icon_emoji": ":rotating_light:"
+}
+```
+
+Config is persisted at `~/.nvr-viewer/notifications.json`.
 
 ### CLI
 
