@@ -806,7 +806,7 @@ class NVRApp {
             this.renderCameraList();
             const cam = this.cameras.find(c => c.id === cameraId);
             const camName = cam ? cam.name : `Camera ${cameraId}`;
-            this.showToast(`${camName} ${type} ${enabled ? 'enabled' : 'disabled'}`, 'info');
+            this.showToast(`${camName} ${type} detection ${enabled ? 'enabled' : 'disabled'}`, 'info');
         } catch (e) {
             this.showToast(`Failed to update: ${e.message}`, 'error');
         }
