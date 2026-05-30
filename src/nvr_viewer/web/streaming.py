@@ -9,14 +9,70 @@ import numpy as np
 import threading
 import time
 import urllib.request
+from pathlib import Path
 
 from ..core.rtsp_client import RTSPClient, CameraConfig
 from ..core.decoder import H264Decoder
+from ..core.recorder import Recorder
 from ..detection.motion import MotionDetector
 from ..detection.detector import ObjectDetector, FaceDetector
 from . import state
 
 logger = logging.getLogger(__name__)
+
+# Segment duration for continuous recording (seconds)
+CONTINUOUS_SEGMENT_SECS = 1800  # 30 minutes
+
+
+def _maybe_start_continuous_recording(camera_key: str, camera_id: int,
+                                       camera_name: str, stream_info: dict):
+    """Start continuous recording if enabled for this camera."""
+    if not state.continuous_recording_settings.get(str(camera_id)):
+        return
+    if stream_info.get("recorder") and stream_info["recorder"].recording:
+        return  # Already recording (manual or continuous)
+
+    recorder = Recorder(camera_name, output_dir=state.RECORDINGS_DIR,
+                        max_duration=CONTINUOUS_SEGMENT_SECS)
+    path = recorder.start()
+    stream_info["recorder"] = recorder
+    stream_info["_continuous"] = True
+    stream_info["_recording_id"] = state.db.log_recording(
+        camera_id, path, "continuous")
+    logger.info("Continuous recording started: camera=%s path=%s",
+                camera_name, path)
+
+
+def _rotate_continuous_recording(camera_key: str, camera_id: int,
+                                  camera_name: str, stream_info: dict):
+    """Rotate continuous recording — stop current segment, start new one."""
+    rec = stream_info.get("recorder")
+    if not rec or not stream_info.get("_continuous"):
+        return
+
+    if not rec.recording:
+        # Segment hit max_duration and auto-stopped — finalize and start new
+        info = rec._stop_internal() if rec._recording else {}
+        rec_id = stream_info.get("_recording_id")
+        if rec_id:
+            fsize = Path(rec.file_path).stat().st_size if Path(rec.file_path).exists() else 0
+            state.db.end_recording(rec_id, fsize)
+
+        # Check if continuous recording is still enabled
+        if state.continuous_recording_settings.get(str(camera_id)):
+            new_rec = Recorder(camera_name, output_dir=state.RECORDINGS_DIR,
+                               max_duration=CONTINUOUS_SEGMENT_SECS)
+            path = new_rec.start()
+            stream_info["recorder"] = new_rec
+            stream_info["_recording_id"] = state.db.log_recording(
+                camera_id, path, "continuous")
+            logger.info("Continuous recording rotated: camera=%s path=%s",
+                        camera_name, path)
+        else:
+            stream_info["recorder"] = None
+            stream_info["_continuous"] = False
+            logger.info("Continuous recording disabled during rotation: camera=%s",
+                        camera_name)
 
 
 def _run_detection(frame, camera_id: int, camera_name: str,
@@ -85,6 +141,10 @@ def _stream_worker(camera_key: str, config: CameraConfig):
     camera_id = cam_db["id"] if cam_db else 0
     frame_skip = 0
 
+    # Auto-start continuous recording if enabled
+    _maybe_start_continuous_recording(camera_key, camera_id, config.name,
+                                       stream_info)
+
     def on_frame(nal_data: bytes, is_first: bool):
         nonlocal frame_skip
         frames = decoder.decode(nal_data)
@@ -95,6 +155,11 @@ def _stream_worker(camera_key: str, config: CameraConfig):
             rec = stream_info.get("recorder")
             if rec and rec.recording:
                 rec.write_frame(frame)
+
+            # Rotate continuous recording if segment auto-stopped
+            if stream_info.get("_continuous"):
+                _rotate_continuous_recording(camera_key, camera_id,
+                                              config.name, stream_info)
 
             frame_skip += 1
             state.event_processor.buffer_frame(camera_id, frame)
@@ -107,6 +172,17 @@ def _stream_worker(camera_key: str, config: CameraConfig):
 
     client.read_frames(on_frame, stop_event.is_set)
     decoder.close()
+
+    # Finalize continuous recording if active
+    rec = stream_info.get("recorder")
+    if rec and rec.recording and stream_info.get("_continuous"):
+        info = rec.stop()
+        rec_id = stream_info.get("_recording_id")
+        if rec_id and info.get("file_path"):
+            fsize = Path(info["file_path"]).stat().st_size if Path(info["file_path"]).exists() else 0
+            state.db.end_recording(rec_id, fsize)
+        stream_info["recorder"] = None
+
     stream_info["status"] = "disconnected"
     logger.info(f"Stream ended: {camera_key}")
 
@@ -139,6 +215,10 @@ def _mjpeg_stream_worker(camera_key: str, stream_url: str):
 
         stream_info["status"] = "streaming"
         logger.info(f"MJPEG stream connected (raw): {stream_url}")
+
+        # Auto-start continuous recording if enabled
+        _maybe_start_continuous_recording(camera_key, camera_id, camera_name,
+                                           stream_info)
 
         buf = b""
         while not stop_event.is_set():
@@ -173,6 +253,11 @@ def _mjpeg_stream_worker(camera_key: str, stream_url: str):
                     if decode_frame is not None:
                         rec.write_frame(decode_frame)
 
+                # Rotate continuous recording if segment auto-stopped
+                if stream_info.get("_continuous"):
+                    _rotate_continuous_recording(camera_key, camera_id,
+                                                  camera_name, stream_info)
+
                 stream_info["latest_jpeg"] = jpeg_bytes
 
                 run_detection = (frame_skip % 5 == 0)
@@ -196,6 +281,16 @@ def _mjpeg_stream_worker(camera_key: str, stream_url: str):
         resp.close()
     except Exception as e:
         logger.error(f"MJPEG stream error: {e}")
+
+    # Finalize continuous recording if active
+    rec = stream_info.get("recorder")
+    if rec and rec.recording and stream_info.get("_continuous"):
+        info = rec.stop()
+        rec_id = stream_info.get("_recording_id")
+        if rec_id and info.get("file_path"):
+            fsize = Path(info["file_path"]).stat().st_size if Path(info["file_path"]).exists() else 0
+            state.db.end_recording(rec_id, fsize)
+        stream_info["recorder"] = None
 
     stream_info["status"] = "disconnected"
     logger.info(f"MJPEG stream ended: {camera_key}")

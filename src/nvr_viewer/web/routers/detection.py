@@ -5,7 +5,9 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from ..state import (detection_settings, camera_detection_settings,
-                     continuous_recording_settings, save_settings)
+                     continuous_recording_settings, save_settings,
+                     active_streams, db, RECORDINGS_DIR)
+from ...core.recorder import Recorder
 
 logger = logging.getLogger(__name__)
 
@@ -103,5 +105,33 @@ async def set_continuous_recording(camera_id: int, toggle: ContinuousRecordingTo
     continuous_recording_settings[cam_key] = toggle.enabled
     save_settings()
     logger.info("Camera %d continuous recording: %s", camera_id, toggle.enabled)
+
+    # If camera is currently streaming, start/stop recording immediately
+    stream = active_streams.get(cam_key)
+    if stream and stream.get("status") == "streaming":
+        rec = stream.get("recorder")
+        if toggle.enabled and (not rec or not rec.recording):
+            # Start continuous recording now
+            cam_name = stream.get("_name", f"cam_{camera_id}")
+            from ..streaming import CONTINUOUS_SEGMENT_SECS
+            recorder = Recorder(cam_name, output_dir=RECORDINGS_DIR,
+                                max_duration=CONTINUOUS_SEGMENT_SECS)
+            path = recorder.start()
+            stream["recorder"] = recorder
+            stream["_continuous"] = True
+            stream["_recording_id"] = db.log_recording(camera_id, path, "continuous")
+            logger.info("Continuous recording started on toggle: camera=%s", cam_name)
+        elif not toggle.enabled and rec and rec.recording and stream.get("_continuous"):
+            # Stop continuous recording
+            from pathlib import Path as P
+            info = rec.stop()
+            rec_id = stream.get("_recording_id")
+            if rec_id and info.get("file_path"):
+                fsize = P(info["file_path"]).stat().st_size if P(info["file_path"]).exists() else 0
+                db.end_recording(rec_id, fsize)
+            stream["recorder"] = None
+            stream["_continuous"] = False
+            logger.info("Continuous recording stopped on toggle: camera=%d", camera_id)
+
     return {"message": f"Camera {camera_id} continuous recording {'enabled' if toggle.enabled else 'disabled'}",
             "camera_id": camera_id, "enabled": toggle.enabled}
