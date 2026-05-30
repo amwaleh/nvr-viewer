@@ -232,7 +232,7 @@
                 </svg>
             </div>
             <p class="text-lg text-slate-400">Select a camera to browse recordings</p>
-            <p class="mt-1 text-sm text-slate-500">Enable continuous recording ⏺ on camera cards to build a timeline</p>
+            <p class="mt-1 text-sm text-slate-500">Select a camera above to browse its recordings</p>
         </div>
     </main>
 </div>
@@ -241,6 +241,7 @@
 let allSegments = [];
 let currentIndex = -1;
 let _hoursCache = {};
+let _contRec = {};
 
 async function api(url) {
     const res = await fetch(url);
@@ -251,7 +252,11 @@ async function api(url) {
 // --- Init ---
 async function init() {
     try {
-        const cameras = await api('/api/cameras');
+        const [cameras, contRec] = await Promise.all([
+            api('/api/cameras'),
+            api('/api/continuous-recording')
+        ]);
+        _contRec = contRec || {};
         const sel = document.getElementById('camera-select');
         cameras.forEach(c => {
             const o = document.createElement('option');
@@ -276,7 +281,10 @@ async function loadDates() {
         show('empty-state', 0);
 
         if (!dates.length) {
-            c.innerHTML = '<p class="text-sm text-slate-500 py-2">No recordings found — enable ⏺ continuous recording on this camera</p>';
+            const isEnabled = _contRec[String(id)] || false;
+            c.innerHTML = isEnabled
+                ? '<p class="text-sm text-slate-500 py-2">⏺ Continuous recording is enabled — recordings will appear here once the camera starts streaming</p>'
+                : '<p class="text-sm text-slate-500 py-2">No recordings found — enable ⏺ continuous recording on the <a href="/" class="text-emerald-400 hover:underline">dashboard</a> or <a href="/settings" class="text-emerald-400 hover:underline">settings</a> page</p>';
             show('dates-section',1); show('timeline-section',0); show('player-section',0);
             return;
         }
