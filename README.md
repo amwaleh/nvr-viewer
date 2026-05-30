@@ -74,6 +74,33 @@ Open **http://localhost:8080** in your browser.
 - **Browse events** in the paginated gallery at `/events`
 - **View clips** — 10-second detection videos with bounding boxes
 
+### Running as a Service / Daemon
+
+Install NVR Viewer as a background service that starts automatically on boot:
+
+```powershell
+# Install as a service (auto-detects platform)
+nvr-viewer service install --port 8080
+
+# Start / stop / check status
+nvr-viewer service start
+nvr-viewer service stop
+nvr-viewer service status
+
+# View logs
+nvr-viewer service logs
+nvr-viewer service logs -f          # follow (tail)
+
+# Remove the service
+nvr-viewer service uninstall
+```
+
+| Platform | Backend | Auto-start |
+|----------|---------|------------|
+| Linux | systemd unit | On boot |
+| Windows | NSSM service (or Task Scheduler fallback) | On boot / logon |
+| macOS | launchd agent | On logon |
+
 ### CLI
 
 ```powershell

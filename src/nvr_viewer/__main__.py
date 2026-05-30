@@ -161,6 +161,29 @@ def cmd_web(args):
     run(host=args.host, port=args.port, reload=args.reload)
 
 
+def cmd_service(args):
+    """Manage NVR Viewer as a system service / daemon."""
+    from .daemon import (
+        service_install, service_uninstall,
+        service_start, service_stop,
+        service_status, service_logs,
+    )
+
+    action = args.action
+    if action == "install":
+        service_install(port=args.port, host=args.host)
+    elif action == "uninstall":
+        service_uninstall()
+    elif action == "start":
+        service_start()
+    elif action == "stop":
+        service_stop()
+    elif action == "status":
+        service_status()
+    elif action == "logs":
+        service_logs(follow=args.follow, lines=args.lines)
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="nvr-viewer",
@@ -214,6 +237,16 @@ def main():
     p_web.add_argument("--port", type=int, default=8080, help="Bind port")
     p_web.add_argument("--reload", action="store_true", help="Auto-reload on changes")
     p_web.set_defaults(func=cmd_web)
+
+    # service / daemon
+    p_svc = sub.add_parser("service", help="Manage NVR Viewer as a system service/daemon")
+    p_svc.add_argument("action", choices=["install", "uninstall", "start", "stop", "status", "logs"],
+                        help="Service action")
+    p_svc.add_argument("--host", default="0.0.0.0", help="Bind host (install only)")
+    p_svc.add_argument("--port", type=int, default=8080, help="Bind port (install only)")
+    p_svc.add_argument("-f", "--follow", action="store_true", help="Follow logs (logs only)")
+    p_svc.add_argument("-n", "--lines", type=int, default=50, help="Number of log lines")
+    p_svc.set_defaults(func=cmd_service)
 
     args = parser.parse_args()
     setup_logging(args.verbose)
