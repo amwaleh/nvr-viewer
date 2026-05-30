@@ -42,6 +42,11 @@ class NotifyConfig:
     webhook_enabled: bool = False
     webhook_url: str = ""
 
+    # Telegram Bot
+    telegram_enabled: bool = False
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
     # What triggers notifications
     notify_on_detection: bool = True
     notify_detection_types: list[str] = field(
@@ -66,6 +71,9 @@ class NotifyConfig:
             "email_to": self.email_to,
             "webhook_enabled": self.webhook_enabled,
             "webhook_url": self.webhook_url,
+            "telegram_enabled": self.telegram_enabled,
+            "telegram_bot_token": self.telegram_bot_token,
+            "telegram_chat_id": self.telegram_chat_id,
             "notify_on_detection": self.notify_on_detection,
             "notify_detection_types": self.notify_detection_types,
             "notify_on_camera_disconnect": self.notify_on_camera_disconnect,
@@ -248,6 +256,8 @@ class NotificationManager:
             self._send_email(subject, body)
         if self.config.webhook_enabled:
             self._send_webhook(subject, body)
+        if self.config.telegram_enabled:
+            self._send_telegram(subject, body)
 
     def _send_email(self, subject: str, body: str):
         """Send email via SMTP."""
@@ -298,3 +308,26 @@ class NotificationManager:
                 logger.info("Webhook notification sent (%d): %s", resp.status, subject)
         except Exception:
             logger.exception("Failed to send webhook notification")
+
+    def _send_telegram(self, subject: str, body: str):
+        """Send Telegram message via Bot API."""
+        if not self.config.telegram_bot_token or not self.config.telegram_chat_id:
+            return
+        try:
+            url = f"https://api.telegram.org/bot{self.config.telegram_bot_token}/sendMessage"
+            text = f"*{subject}*\n\n{body}"
+            payload = json.dumps({
+                "chat_id": self.config.telegram_chat_id,
+                "text": text,
+                "parse_mode": "Markdown",
+            }).encode()
+
+            req = urllib.request.Request(
+                url, data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                logger.info("Telegram notification sent (%d): %s", resp.status, subject)
+        except Exception:
+            logger.exception("Failed to send Telegram notification")

@@ -102,7 +102,7 @@
                     <label class="mb-1 block text-sm text-slate-400">Storage Directory</label>
                     <div class="flex gap-2">
                         <input type="text" id="storage-dir" placeholder="/path/to/storage">
-                        <button onclick="saveStorage()" class="shrink-0 rounded-xl bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-500">Save</button>
+                        <button onclick="saveStorage()" class="shrink-0 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500">Save</button>
                     </div>
                 </div>
                 <div>
@@ -110,7 +110,7 @@
                     <div class="flex items-center gap-2">
                         <input type="number" id="disk-guard-pct" min="5" max="80" class="!w-24">
                         <span class="text-sm text-slate-400">%</span>
-                        <button onclick="saveDiskGuard()" class="shrink-0 rounded-xl bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-500">Save</button>
+                        <button onclick="saveDiskGuard()" class="shrink-0 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500">Save</button>
                     </div>
                     <p class="mt-1 text-xs text-slate-500">Auto-cleanup when free space drops below this (5–80%)</p>
                 </div>
@@ -192,6 +192,32 @@
                     </div>
                 </fieldset>
 
+                <!-- Telegram -->
+                <fieldset class="rounded-xl border border-white/10 p-4">
+                    <legend class="flex items-center gap-2 px-2 text-sm font-semibold text-slate-300">
+                        <span>✈️</span> Telegram
+                        <label class="toggle ml-2" style="width:2.4rem;height:1.3rem">
+                            <input type="checkbox" id="telegram-enabled" onchange="saveNotifications()">
+                            <span class="slider" style="--dot:0.85rem;--shift:1.1rem"></span>
+                        </label>
+                    </legend>
+                    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div>
+                            <label class="mb-1 block text-xs text-slate-400">Bot Token</label>
+                            <input type="password" id="telegram-token" placeholder="123456:ABC-DEF...">
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs text-slate-400">Chat ID</label>
+                            <input type="text" id="telegram-chat-id" placeholder="-1001234567890">
+                        </div>
+                    </div>
+                    <p class="mt-2 text-xs text-slate-500">
+                        Create a bot via <a href="https://t.me/BotFather" target="_blank" class="text-sky-400 hover:underline">@BotFather</a>,
+                        then message the bot and get your Chat ID via
+                        <code class="rounded bg-slate-800 px-1">https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code>
+                    </p>
+                </fieldset>
+
                 <!-- Event Triggers -->
                 <fieldset class="rounded-xl border border-white/10 p-4">
                     <legend class="px-2 text-sm font-semibold text-slate-300">Event Triggers</legend>
@@ -225,7 +251,7 @@
 
                 <!-- Actions -->
                 <div class="flex flex-wrap gap-3">
-                    <button onclick="saveNotifications()" class="rounded-xl bg-sky-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-sky-500">
+                    <button onclick="saveNotifications()" class="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-500">
                         Save Notification Settings
                     </button>
                     <button onclick="testNotification('all')" class="rounded-xl border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10">
@@ -236,6 +262,9 @@
                     </button>
                     <button onclick="testNotification('webhook')" class="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-300 transition hover:bg-white/10">
                         Test Webhook
+                    </button>
+                    <button onclick="testNotification('telegram')" class="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-300 transition hover:bg-white/10">
+                        Test Telegram
                     </button>
                 </div>
             </div>
@@ -354,6 +383,10 @@
             document.getElementById('email-to').value = (c.email_to || []).join(', ');
             document.getElementById('webhook-enabled').checked = c.webhook_enabled || false;
             document.getElementById('webhook-url').value = c.webhook_url || '';
+            document.getElementById('telegram-enabled').checked = c.telegram_enabled || false;
+            document.getElementById('telegram-token').value = '';
+            document.getElementById('telegram-token').placeholder = c.telegram_bot_token === '********' ? '(saved — leave blank to keep)' : '123456:ABC-DEF...';
+            document.getElementById('telegram-chat-id').value = c.telegram_chat_id || '';
             document.getElementById('notif-detection').checked = c.notify_on_detection !== false;
             document.getElementById('notif-disconnect').checked = c.notify_on_camera_disconnect !== false;
             document.getElementById('notif-disk').checked = c.notify_on_disk_warning !== false;
@@ -378,6 +411,8 @@
             email_to: emailTo ? emailTo.split(',').map(e => e.trim()).filter(Boolean) : [],
             webhook_enabled: document.getElementById('webhook-enabled').checked,
             webhook_url: document.getElementById('webhook-url').value.trim(),
+            telegram_enabled: document.getElementById('telegram-enabled').checked,
+            telegram_chat_id: document.getElementById('telegram-chat-id').value.trim(),
             notify_on_detection: document.getElementById('notif-detection').checked,
             notify_on_camera_disconnect: document.getElementById('notif-disconnect').checked,
             notify_on_disk_warning: document.getElementById('notif-disk').checked,
@@ -388,6 +423,8 @@
 
         // Only send password if user entered a new one
         if (pw) payload.smtp_password = pw;
+        const tgToken = document.getElementById('telegram-token').value;
+        if (tgToken) payload.telegram_bot_token = tgToken;
 
         try {
             await api('POST', '/api/notifications', payload);

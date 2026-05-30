@@ -22,6 +22,9 @@ class NotificationSettings(BaseModel):
     email_to: Optional[list[str]] = None
     webhook_enabled: Optional[bool] = None
     webhook_url: Optional[str] = None
+    telegram_enabled: Optional[bool] = None
+    telegram_bot_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
     notify_on_detection: Optional[bool] = None
     notify_detection_types: Optional[list[str]] = None
     notify_on_camera_disconnect: Optional[bool] = None
@@ -31,7 +34,7 @@ class NotificationSettings(BaseModel):
 
 
 class TestNotification(BaseModel):
-    channel: str = "all"  # "email", "webhook", or "all"
+    channel: str = "all"  # "email", "webhook", "telegram", or "all"
 
 
 @router.get("/notifications")
@@ -40,6 +43,8 @@ async def get_notification_settings():
     config = notifier.config.to_dict()
     if config.get("smtp_password"):
         config["smtp_password"] = "********"
+    if config.get("telegram_bot_token"):
+        config["telegram_bot_token"] = "********"
     return config
 
 
@@ -61,5 +66,7 @@ async def test_notification(req: TestNotification):
         notifier._send_email(subject, body)
     if req.channel in ("webhook", "all") and notifier.config.webhook_enabled:
         notifier._send_webhook(subject, body)
+    if req.channel in ("telegram", "all") and notifier.config.telegram_enabled:
+        notifier._send_telegram(subject, body)
 
     return {"message": f"Test notification sent via {req.channel}"}
