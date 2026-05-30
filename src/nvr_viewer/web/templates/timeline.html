@@ -402,8 +402,21 @@ function play(idx) {
 
     ph.classList.add('hidden');
     player.classList.remove('hidden');
+
+    // Reset player state for new source
+    player.pause();
+    player.removeAttribute('src');
+    player.load();
+
     player.src = seg.playback_url;
-    player.play().catch(() => {});
+    player.type = 'video/mp4';
+    player.load();
+    player.play().catch(e => console.warn('Play failed:', e));
+
+    player.onerror = () => {
+        const err = player.error;
+        console.error('Video error:', err ? err.code + ' ' + err.message : 'unknown');
+    };
 
     const t = (seg.start_time||'').substring(11,19) || '';
     document.getElementById('now-playing').textContent = `▶ ${t} — ${seg.filename||''}`;
