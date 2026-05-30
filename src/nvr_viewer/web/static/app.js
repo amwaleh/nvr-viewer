@@ -804,7 +804,9 @@ class NVRApp {
             this._cameraDetectionSettings[camKey][type] = enabled;
             this.renderCameraGrid();
             this.renderCameraList();
-            this.showToast(`Camera ${cameraId} ${type} ${enabled ? 'enabled' : 'disabled'}`, 'info');
+            const cam = this.cameras.find(c => c.id === cameraId);
+            const camName = cam ? cam.name : `Camera ${cameraId}`;
+            this.showToast(`${camName} ${type} ${enabled ? 'enabled' : 'disabled'}`, 'info');
         } catch (e) {
             this.showToast(`Failed to update: ${e.message}`, 'error');
         }
@@ -818,7 +820,9 @@ class NVRApp {
             if (this._cameraDetectionSettings) delete this._cameraDetectionSettings[camKey];
             this.renderCameraGrid();
             this.renderCameraList();
-            this.showToast(`Camera ${cameraId} reset to defaults`, 'info');
+            const cam = this.cameras.find(c => c.id === cameraId);
+            const camName = cam ? cam.name : `Camera ${cameraId}`;
+            this.showToast(`${camName} reset to defaults`, 'info');
         } catch (e) {
             this.showToast(`Failed to reset: ${e.message}`, 'error');
         }
