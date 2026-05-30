@@ -96,17 +96,25 @@ async def timeline_segments(camera_id: int, date: str):
 
     # Sort by start_time and group by hour
     segments.sort(key=lambda s: s["start_time"] or "")
+    # Filter out segments where the file no longer exists
+    segments = [s for s in segments if s["file_path"] and Path(s["file_path"]).exists()]
+
     hours = {}
     for seg in segments:
         st = seg["start_time"] or ""
         h = st[11:13] if len(st) >= 13 else "00"
         if h not in hours:
             hours[h] = []
-        # Add playback URL
         fp = seg["file_path"]
         fname = Path(fp).name if fp else ""
-        seg["playback_url"] = f"/api/recordings/{fname}" if fname else ""
+        seg["playback_url"] = f"/api/timeline/play/{fname}" if fname else ""
         seg["filename"] = fname
+        # Include actual file size if missing
+        if not seg["file_size"] and fp:
+            try:
+                seg["file_size"] = Path(fp).stat().st_size
+            except OSError:
+                pass
         hours[h].append(seg)
 
     return {"date": date, "camera_id": camera_id, "hours": hours, "total_segments": len(segments)}
@@ -117,9 +125,25 @@ async def play_segment(filename: str):
     """Stream a recording segment for playback."""
     if "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(400, "Invalid filename")
-    file_path = (RECORDINGS_DIR / filename).resolve()
-    if not str(file_path).startswith(str(RECORDINGS_DIR.resolve())):
-        raise HTTPException(400, "Invalid filename")
-    if not file_path.exists():
-        raise HTTPException(404, "Recording not found")
-    return FileResponse(file_path, media_type="video/mp4")
+
+    # Search in RECORDINGS_DIR and common alternate locations
+    search_dirs = [RECORDINGS_DIR]
+    alt = Path.home() / ".nvr-viewer" / "recordings"
+    if alt != RECORDINGS_DIR and alt.exists():
+        search_dirs.append(alt)
+
+    for d in search_dirs:
+        candidate = (d / filename).resolve()
+        if str(candidate).startswith(str(d.resolve())) and candidate.exists():
+            return FileResponse(candidate, media_type="video/mp4")
+
+    # Also check DB for full path
+    rows = db.execute(
+        "SELECT file_path FROM recordings WHERE file_path LIKE ?",
+        (f"%{filename}",))
+    for row in rows:
+        fp = Path(row["file_path"])
+        if fp.exists():
+            return FileResponse(str(fp), media_type="video/mp4")
+
+    raise HTTPException(404, "Recording not found")
