@@ -481,6 +481,7 @@
                     <span class="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400">Recording Count</span>
                 </div>
                 <button id="sidebar-toggle" class="sidebar-toggle btn-ghost hidden px-4 md:inline-flex lg:hidden" type="button">Sidebar</button>
+                <a href="/settings" class="btn-ghost inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-white/10 hover:text-white">⚙ Settings</a>
             </div>
         </header>
 
@@ -497,14 +498,14 @@
                 </div>
             </section>
 
-            <aside class="panel sidebar w-full overflow-hidden rounded-3xl border border-nvr-border bg-nvr-card/95 shadow-[0_16px_32px_rgba(0,0,0,0.28)] lg:max-h-[calc(100vh-9rem)] lg:min-h-0">
+            <aside class="panel sidebar w-full overflow-hidden rounded-3xl border border-nvr-border bg-nvr-card/95 shadow-[0_16px_32px_rgba(0,0,0,0.28)] lg:min-h-0">
                 <div class="tabs grid grid-cols-2 border-b border-nvr-border bg-nvr-accent/20 md:grid-cols-4" role="tablist" aria-label="NVR Sidebar Tabs">
                     <button class="tab-button active min-h-12 px-3 py-3 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white md:min-h-14" data-tab="cameras" type="button">Cameras</button>
                     <button class="tab-button min-h-12 px-3 py-3 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white md:min-h-14" data-tab="recordings" type="button">Recordings</button>
                     <button class="tab-button min-h-12 px-3 py-3 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white md:min-h-14" data-tab="sdcard" type="button">SD Card</button>
                     <button class="tab-button min-h-12 px-3 py-3 text-sm font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white md:min-h-14" data-tab="events" type="button">Events</button>
                 </div>
-                <div class="tab-content flex max-h-full flex-col gap-5 overflow-y-auto p-4 md:p-5">
+                <div class="tab-content flex flex-col gap-5 overflow-y-auto p-4 md:p-5">
                     <section class="tab-panel active" id="tab-cameras">
                         <div id="cameras-default-view">
                             <div class="stack flex flex-col gap-4">
@@ -642,7 +643,7 @@
                                     <h3 class="text-base font-semibold text-white md:text-lg">Detection Events</h3>
                                     <p class="panel-subtitle mt-1 text-sm text-slate-400 md:text-base">Recent camera detections with type-based filtering.</p>
                                 </div>
-                                <a href="/events" target="_blank" class="btn-primary events-gallery-btn w-full justify-center md:w-auto">View Events Gallery ↗</a>
+                                <a href="/events" target="_blank" class="events-gallery-btn w-full justify-center rounded-2xl bg-gradient-to-r from-nvr-highlight to-pink-600 px-6 py-3 text-base font-bold text-white shadow-lg transition hover:scale-[1.02] hover:shadow-xl md:w-auto">View Events Gallery ↗</a>
                             </div>
                             <div class="form-group flex flex-col gap-2">
                                 <label for="event-type-filter" class="text-sm text-slate-400">Filter by detection type</label>

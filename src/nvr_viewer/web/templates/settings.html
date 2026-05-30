@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NVR Settings</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+    tailwind.config = {
+        darkMode: 'class',
+        theme: {
+            extend: {
+                colors: {
+                    nvr: {
+                        bg: '#1a1a2e',
+                        card: '#16213e',
+                        accent: '#0f3460',
+                        highlight: '#e94560',
+                        border: '#2a2a4a',
+                    },
+                },
+            },
+        },
+    }
+    </script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        input[type="text"], input[type="number"], input[type="email"], input[type="password"], select {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            color: #eee;
+            border-radius: 0.75rem;
+            padding: 0.65rem 1rem;
+            width: 100%;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        input:focus, select:focus { border-color: #38bdf8; }
+        .toggle { position: relative; width: 3rem; height: 1.625rem; cursor: pointer; }
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        .toggle .slider {
+            position: absolute; inset: 0; border-radius: 9999px;
+            background: rgba(255,255,255,0.12); transition: background 0.2s;
+        }
+        .toggle .slider::after {
+            content: ''; position: absolute; top: 3px; left: 3px;
+            width: 1.125rem; height: 1.125rem; border-radius: 50%;
+            background: #94a3b8; transition: transform 0.2s, background 0.2s;
+        }
+        .toggle input:checked + .slider { background: #2ecc71; }
+        .toggle input:checked + .slider::after { transform: translateX(1.375rem); background: #fff; }
+    </style>
+</head>
+<body class="min-h-screen bg-nvr-bg text-slate-100 antialiased">
+    <!-- Header -->
+    <header class="sticky top-0 z-20 flex items-center justify-between border-b border-nvr-border bg-nvr-accent/30 p-4 backdrop-blur-sm md:px-6">
+        <div class="flex items-center gap-3">
+            <a href="/" class="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-sky-500/90 to-nvr-accent text-sm font-bold tracking-[0.18em] text-white shadow-lg">NV</a>
+            <div>
+                <h1 class="text-xl font-semibold tracking-tight text-white">Settings</h1>
+                <p class="text-sm text-slate-300">Notifications, storage &amp; system</p>
+            </div>
+        </div>
+        <nav class="flex items-center gap-2">
+            <a href="/" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-white/10 hover:text-white">Dashboard</a>
+            <a href="/events" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-white/10 hover:text-white">Events</a>
+        </nav>
+    </header>
+
+    <main class="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
+        <!-- Toast -->
+        <div id="toast" class="fixed right-4 top-20 z-50 hidden max-w-sm rounded-xl border border-nvr-border bg-nvr-card px-5 py-3 text-sm shadow-lg transition-opacity"></div>
+
+        <!-- System Status -->
+        <section class="rounded-2xl border border-nvr-border bg-nvr-card/95 p-5 shadow-lg">
+            <h2 class="mb-4 text-lg font-semibold text-white">System Status</h2>
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div class="rounded-xl border border-white/10 bg-slate-950/35 p-3 text-center">
+                    <div id="stat-cameras" class="text-2xl font-bold text-white">—</div>
+                    <div class="mt-1 text-xs uppercase tracking-wider text-slate-400">Cameras</div>
+                </div>
+                <div class="rounded-xl border border-white/10 bg-slate-950/35 p-3 text-center">
+                    <div id="stat-streams" class="text-2xl font-bold text-white">—</div>
+                    <div class="mt-1 text-xs uppercase tracking-wider text-slate-400">Streaming</div>
+                </div>
+                <div class="rounded-xl border border-white/10 bg-slate-950/35 p-3 text-center">
+                    <div id="stat-recordings" class="text-2xl font-bold text-white">—</div>
+                    <div class="mt-1 text-xs uppercase tracking-wider text-slate-400">Recordings</div>
+                </div>
+                <div class="rounded-xl border border-white/10 bg-slate-950/35 p-3 text-center">
+                    <div id="stat-disk" class="text-2xl font-bold text-white">—</div>
+                    <div class="mt-1 text-xs uppercase tracking-wider text-slate-400">Disk Free</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Storage Settings -->
+        <section class="rounded-2xl border border-nvr-border bg-nvr-card/95 p-5 shadow-lg">
+            <h2 class="mb-4 text-lg font-semibold text-white">Storage</h2>
+            <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                    <label class="mb-1 block text-sm text-slate-400">Storage Directory</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="storage-dir" placeholder="/path/to/storage">
+                        <button onclick="saveStorage()" class="shrink-0 rounded-xl bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-500">Save</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm text-slate-400">Min Free Disk Space (%)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="disk-guard-pct" min="5" max="80" class="!w-24">
+                        <span class="text-sm text-slate-400">%</span>
+                        <button onclick="saveDiskGuard()" class="shrink-0 rounded-xl bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-500">Save</button>
+                    </div>
+                    <p class="mt-1 text-xs text-slate-500">Auto-cleanup when free space drops below this (5–80%)</p>
+                </div>
+            </div>
+            <!-- Disk bar -->
+            <div class="mt-4">
+                <div class="mb-1 flex justify-between text-xs text-slate-400">
+                    <span>Disk Usage</span>
+                    <span id="disk-label">—</span>
+                </div>
+                <div class="h-3 overflow-hidden rounded-full bg-slate-800">
+                    <div id="disk-bar" class="h-full rounded-full bg-sky-500 transition-all" style="width:0%"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Notification Settings -->
+        <section class="rounded-2xl border border-nvr-border bg-nvr-card/95 p-5 shadow-lg">
+            <div class="mb-4 flex items-center justify-between">
+                <h2 class="text-lg font-semibold text-white">Notifications</h2>
+                <label class="toggle" title="Enable notifications">
+                    <input type="checkbox" id="notif-enabled" onchange="saveNotifications()">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div id="notif-settings" class="space-y-5">
+                <!-- Email -->
+                <fieldset class="rounded-xl border border-white/10 p-4">
+                    <legend class="flex items-center gap-2 px-2 text-sm font-semibold text-slate-300">
+                        <span>📧</span> Email (SMTP)
+                        <label class="toggle ml-2" style="width:2.4rem;height:1.3rem">
+                            <input type="checkbox" id="email-enabled" onchange="saveNotifications()">
+                            <span class="slider" style="--dot:0.85rem;--shift:1.1rem"></span>
+                        </label>
+                    </legend>
+                    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div>
+                            <label class="mb-1 block text-xs text-slate-400">SMTP Host</label>
+                            <input type="text" id="smtp-host" placeholder="smtp.gmail.com">
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs text-slate-400">SMTP Port</label>
+                            <input type="number" id="smtp-port" placeholder="587" class="!w-28">
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs text-slate-400">Username</label>
+                            <input type="email" id="smtp-user" placeholder="you@gmail.com">
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs text-slate-400">Password</label>
+                            <input type="password" id="smtp-password" placeholder="app password">
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs text-slate-400">Recipient</label>
+                            <input type="email" id="email-to" placeholder="alerts@example.com">
+                        </div>
+                        <div class="flex items-end gap-3">
+                            <label class="flex items-center gap-2 text-sm text-slate-300">
+                                <input type="checkbox" id="smtp-tls" checked class="accent-sky-500">
+                                Use TLS
+                            </label>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <!-- Webhook -->
+                <fieldset class="rounded-xl border border-white/10 p-4">
+                    <legend class="flex items-center gap-2 px-2 text-sm font-semibold text-slate-300">
+                        <span>🔗</span> Webhook
+                        <label class="toggle ml-2" style="width:2.4rem;height:1.3rem">
+                            <input type="checkbox" id="webhook-enabled" onchange="saveNotifications()">
+                            <span class="slider" style="--dot:0.85rem;--shift:1.1rem"></span>
+                        </label>
+                    </legend>
+                    <div class="mt-3">
+                        <label class="mb-1 block text-xs text-slate-400">Webhook URL (Slack, Discord, Teams)</label>
+                        <input type="text" id="webhook-url" placeholder="https://hooks.slack.com/services/...">
+                    </div>
+                </fieldset>
+
+                <!-- Event Triggers -->
+                <fieldset class="rounded-xl border border-white/10 p-4">
+                    <legend class="px-2 text-sm font-semibold text-slate-300">Event Triggers</legend>
+                    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                        <label class="flex items-center gap-2 text-sm text-slate-300">
+                            <input type="checkbox" id="notif-detection" class="accent-sky-500" onchange="saveNotifications()">
+                            AI Detections
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-slate-300">
+                            <input type="checkbox" id="notif-disconnect" class="accent-sky-500" onchange="saveNotifications()">
+                            Camera Disconnect
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-slate-300">
+                            <input type="checkbox" id="notif-disk" class="accent-sky-500" onchange="saveNotifications()">
+                            Disk Space Warning
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-slate-300">
+                            <input type="checkbox" id="notif-recording" class="accent-sky-500" onchange="saveNotifications()">
+                            Recording Paused
+                        </label>
+                    </div>
+                    <div class="mt-3">
+                        <label class="mb-1 block text-xs text-slate-400">Detection Types (comma-separated)</label>
+                        <input type="text" id="notif-det-types" placeholder="person, vehicle, face, motion">
+                    </div>
+                    <div class="mt-3">
+                        <label class="mb-1 block text-xs text-slate-400">Cooldown (seconds between repeated alerts)</label>
+                        <input type="number" id="notif-cooldown" min="0" class="!w-28" value="60">
+                    </div>
+                </fieldset>
+
+                <!-- Actions -->
+                <div class="flex flex-wrap gap-3">
+                    <button onclick="saveNotifications()" class="rounded-xl bg-sky-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-sky-500">
+                        Save Notification Settings
+                    </button>
+                    <button onclick="testNotification('all')" class="rounded-xl border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10">
+                        Send Test Notification
+                    </button>
+                    <button onclick="testNotification('email')" class="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-300 transition hover:bg-white/10">
+                        Test Email
+                    </button>
+                    <button onclick="testNotification('webhook')" class="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-300 transition hover:bg-white/10">
+                        Test Webhook
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Service / Daemon -->
+        <section class="rounded-2xl border border-nvr-border bg-nvr-card/95 p-5 shadow-lg">
+            <h2 class="mb-4 text-lg font-semibold text-white">Service / Daemon</h2>
+            <p class="mb-3 text-sm text-slate-400">Manage the NVR Viewer background service. Run these commands in a terminal on the server.</p>
+            <div class="space-y-2 rounded-xl bg-slate-950/50 p-4 font-mono text-sm text-slate-300">
+                <div><span class="text-slate-500"># Install as service</span></div>
+                <div class="text-sky-300">nvr-viewer service install --port 8080</div>
+                <div class="mt-2"><span class="text-slate-500"># Start / Stop / Status</span></div>
+                <div class="text-sky-300">nvr-viewer service start</div>
+                <div class="text-sky-300">nvr-viewer service stop</div>
+                <div class="text-sky-300">nvr-viewer service status</div>
+                <div class="mt-2"><span class="text-slate-500"># View logs</span></div>
+                <div class="text-sky-300">nvr-viewer service logs</div>
+                <div class="mt-2"><span class="text-slate-500"># Uninstall</span></div>
+                <div class="text-sky-300">nvr-viewer service uninstall</div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="border-t border-nvr-border px-4 py-4 text-center text-sm text-slate-500">
+        NVR Viewer &mdash; <a href="/" class="text-sky-400 hover:underline">Dashboard</a> &middot;
+        <a href="/events" class="text-sky-400 hover:underline">Events</a> &middot;
+        <a href="/docs" target="_blank" class="text-sky-400 hover:underline">API Docs</a>
+    </footer>
+
+    <script>
+    const API = '';
+
+    function toast(msg, type = 'info') {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.className = 'fixed right-4 top-20 z-50 max-w-sm rounded-xl border px-5 py-3 text-sm shadow-lg transition-opacity';
+        if (type === 'success') t.classList.add('border-green-600/40', 'bg-green-900/60', 'text-green-200');
+        else if (type === 'error') t.classList.add('border-red-600/40', 'bg-red-900/60', 'text-red-200');
+        else t.classList.add('border-nvr-border', 'bg-nvr-card', 'text-slate-200');
+        t.style.display = 'block';
+        setTimeout(() => { t.style.display = 'none'; }, 4000);
+    }
+
+    async function api(method, path, body) {
+        const opts = { method, headers: { 'Content-Type': 'application/json' } };
+        if (body) opts.body = JSON.stringify(body);
+        const r = await fetch(API + path, opts);
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || r.statusText);
+        }
+        return r.json();
+    }
+
+    // --- Load system status ---
+    async function loadStatus() {
+        try {
+            const s = await api('GET', '/api/status');
+            document.getElementById('stat-cameras').textContent = s.cameras_registered;
+            document.getElementById('stat-streams').textContent = s.streams_active;
+            document.getElementById('stat-recordings').textContent = s.recordings_count;
+            if (s.disk) {
+                document.getElementById('stat-disk').textContent = s.disk.free_percent + '%';
+                const usedPct = 100 - s.disk.free_percent;
+                const bar = document.getElementById('disk-bar');
+                bar.style.width = usedPct + '%';
+                bar.className = 'h-full rounded-full transition-all ' +
+                    (s.disk.free_percent < 15 ? 'bg-red-500' : s.disk.free_percent < 30 ? 'bg-amber-500' : 'bg-sky-500');
+                document.getElementById('disk-label').textContent =
+                    `${s.disk.used_gb.toFixed(1)} GB used / ${s.disk.total_gb.toFixed(1)} GB total (${s.disk.free_percent}% free)`;
+            }
+        } catch (e) { console.error('Status load failed:', e); }
+    }
+
+    // --- Load storage settings ---
+    async function loadStorage() {
+        try {
+            const s = await api('GET', '/api/settings/storage');
+            document.getElementById('storage-dir').value = s.storage_dir || '';
+            document.getElementById('disk-guard-pct').value = s.min_free_percent || 30;
+        } catch (e) { console.error('Storage load failed:', e); }
+    }
+
+    async function saveStorage() {
+        const dir = document.getElementById('storage-dir').value.trim();
+        if (!dir) return toast('Enter a storage directory', 'error');
+        try {
+            await api('POST', '/api/settings/storage', { storage_dir: dir });
+            toast('Storage directory saved', 'success');
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function saveDiskGuard() {
+        const pct = parseInt(document.getElementById('disk-guard-pct').value, 10);
+        if (isNaN(pct)) return toast('Enter a valid percentage', 'error');
+        try {
+            const r = await api('POST', '/api/settings/disk-guard', { min_free_percent: pct });
+            toast(`Disk guard set to ${r.min_free_percent}%`, 'success');
+            loadStatus();
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // --- Load notification settings ---
+    async function loadNotifications() {
+        try {
+            const c = await api('GET', '/api/notifications');
+            document.getElementById('notif-enabled').checked = c.enabled || false;
+            document.getElementById('email-enabled').checked = c.email_enabled || false;
+            document.getElementById('smtp-host').value = c.smtp_host || '';
+            document.getElementById('smtp-port').value = c.smtp_port || 587;
+            document.getElementById('smtp-user').value = c.smtp_user || '';
+            document.getElementById('smtp-password').value = '';
+            document.getElementById('smtp-password').placeholder = c.smtp_password === '********' ? '(saved — leave blank to keep)' : 'app password';
+            document.getElementById('smtp-tls').checked = c.smtp_use_tls !== false;
+            document.getElementById('email-to').value = (c.email_to || []).join(', ');
+            document.getElementById('webhook-enabled').checked = c.webhook_enabled || false;
+            document.getElementById('webhook-url').value = c.webhook_url || '';
+            document.getElementById('notif-detection').checked = c.notify_on_detection !== false;
+            document.getElementById('notif-disconnect').checked = c.notify_on_camera_disconnect !== false;
+            document.getElementById('notif-disk').checked = c.notify_on_disk_warning !== false;
+            document.getElementById('notif-recording').checked = c.notify_on_recording_paused !== false;
+            document.getElementById('notif-det-types').value = (c.notify_detection_types || []).join(', ');
+            document.getElementById('notif-cooldown').value = c.cooldown_seconds || 60;
+        } catch (e) { console.error('Notifications load failed:', e); }
+    }
+
+    async function saveNotifications() {
+        const emailTo = document.getElementById('email-to').value.trim();
+        const detTypes = document.getElementById('notif-det-types').value.trim();
+        const pw = document.getElementById('smtp-password').value;
+
+        const payload = {
+            enabled: document.getElementById('notif-enabled').checked,
+            email_enabled: document.getElementById('email-enabled').checked,
+            smtp_host: document.getElementById('smtp-host').value.trim(),
+            smtp_port: parseInt(document.getElementById('smtp-port').value, 10) || 587,
+            smtp_user: document.getElementById('smtp-user').value.trim(),
+            smtp_use_tls: document.getElementById('smtp-tls').checked,
+            email_to: emailTo ? emailTo.split(',').map(e => e.trim()).filter(Boolean) : [],
+            webhook_enabled: document.getElementById('webhook-enabled').checked,
+            webhook_url: document.getElementById('webhook-url').value.trim(),
+            notify_on_detection: document.getElementById('notif-detection').checked,
+            notify_on_camera_disconnect: document.getElementById('notif-disconnect').checked,
+            notify_on_disk_warning: document.getElementById('notif-disk').checked,
+            notify_on_recording_paused: document.getElementById('notif-recording').checked,
+            notify_detection_types: detTypes ? detTypes.split(',').map(t => t.trim()).filter(Boolean) : [],
+            cooldown_seconds: parseInt(document.getElementById('notif-cooldown').value, 10) || 60,
+        };
+
+        // Only send password if user entered a new one
+        if (pw) payload.smtp_password = pw;
+
+        try {
+            await api('POST', '/api/notifications', payload);
+            toast('Notification settings saved', 'success');
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    async function testNotification(channel) {
+        try {
+            const r = await api('POST', '/api/notifications/test', { channel });
+            toast(r.message || 'Test sent', 'success');
+        } catch (e) { toast(e.message, 'error'); }
+    }
+
+    // --- Init ---
+    document.addEventListener('DOMContentLoaded', () => {
+        loadStatus();
+        loadStorage();
+        loadNotifications();
+    });
+    </script>
+</body>
+</html>

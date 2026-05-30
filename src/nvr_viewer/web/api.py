@@ -48,6 +48,15 @@ async def events_page():
     raise HTTPException(404, "Events page not found")
 
 
+@app.get("/settings")
+async def settings_page():
+    """Serve the settings configuration page."""
+    settings_path = TEMPLATES_DIR / "settings.html"
+    if settings_path.exists():
+        return FileResponse(settings_path, media_type="text/html")
+    raise HTTPException(404, "Settings page not found")
+
+
 # --- Static files ---
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 

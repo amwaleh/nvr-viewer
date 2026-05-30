@@ -37,6 +37,7 @@ async def client():
 EXPECTED_ROUTES = [
     ("GET", "/"),
     ("GET", "/events"),
+    ("GET", "/settings"),
     ("GET", "/api/cameras"),
     ("POST", "/api/cameras"),
     ("DELETE", "/api/cameras/{camera_id}"),
@@ -100,8 +101,8 @@ class TestRouteInventory:
 
     def test_no_missing_routes(self):
         """Sanity: expected route count matches."""
-        assert len(EXPECTED_ROUTES) == 38, \
-            f"Expected 38 routes, got {len(EXPECTED_ROUTES)}"
+        assert len(EXPECTED_ROUTES) == 39, \
+            f"Expected 39 routes, got {len(EXPECTED_ROUTES)}"
 
 
 # ============================================================
