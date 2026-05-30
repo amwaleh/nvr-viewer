@@ -84,14 +84,24 @@ async def update_camera(camera_id: int, cam: CameraUpdate):
     if not existing:
         raise HTTPException(404, "Camera not found")
 
-    updates = {}
-    for field in ["name", "host", "port", "path", "username", "password", "type", "stream_url"]:
+    # Stop stream if connection details changed
+    if cam.host is not None or cam.port is not None or cam.path is not None:
+        stop_stream(str(camera_id))
+
+    # Only pass DB-safe fields (no credentials)
+    db_fields = {}
+    for field in ["name", "host", "port", "path"]:
         val = getattr(cam, field, None)
         if val is not None:
-            updates[field] = val
+            db_fields[field] = val
 
-    if updates:
-        db.update_camera(camera_id, **updates)
+    if db_fields:
+        db.update_camera(camera_id, **db_fields)
+
+    # Update credentials via encrypted store (never in DB)
+    if cam.password:
+        host = cam.host or existing["host"]
+        creds.set(host, cam.username or "admin", cam.password)
 
     return {"message": "Camera updated", "id": camera_id}
 
@@ -155,11 +165,12 @@ async def start_camera_stream(camera_id: int):
         start_stream(key, camera_type="mjpeg", stream_url=stream_url,
                      camera_name=cam["name"], camera_host=cam["host"])
     else:
+        stored_cred = creds.get(cam["host"])
         config = CameraConfig(
             host=cam["host"], port=cam["port"],
             path=cam.get("path", "/onvif1"),
-            username=cam.get("username", "admin"),
-            password=cam.get("password", ""),
+            username=stored_cred["username"] if stored_cred else "admin",
+            password=stored_cred["password"] if stored_cred else "",
             name=cam["name"])
         start_stream(key, config=config)
 

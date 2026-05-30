@@ -27,7 +27,9 @@ class StorageSettings(BaseModel):
 
 @router.get("/credentials")
 async def list_credentials():
-    return creds.list_hosts()
+    """List hosts with stored credentials (passwords hidden)."""
+    hosts = creds.list_hosts()
+    return [{"host": h, "username": creds.get(h)["username"]} for h in hosts]
 
 
 @router.post("/credentials")
