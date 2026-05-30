@@ -397,14 +397,15 @@
             document.getElementById('stat-streams').textContent = s.streams_active;
             document.getElementById('stat-recordings').textContent = s.recordings_count;
             if (s.disk) {
-                document.getElementById('stat-disk').textContent = s.disk.free_percent + '%';
-                const usedPct = 100 - s.disk.free_percent;
+                document.getElementById('stat-disk').textContent = s.disk.disk_free_percent + '%';
+                const usedPct = 100 - s.disk.disk_free_percent;
                 const bar = document.getElementById('disk-bar');
                 bar.style.width = usedPct + '%';
                 bar.className = 'h-full rounded-full transition-all ' +
-                    (s.disk.free_percent < 15 ? 'bg-red-500' : s.disk.free_percent < 30 ? 'bg-amber-500' : 'bg-sky-500');
+                    (s.disk.disk_free_percent < 15 ? 'bg-red-500' : s.disk.disk_free_percent < 30 ? 'bg-amber-500' : 'bg-sky-500');
+                const usedGb = s.disk.disk_total_gb - s.disk.disk_free_gb;
                 document.getElementById('disk-label').textContent =
-                    `${s.disk.used_gb.toFixed(1)} GB used / ${s.disk.total_gb.toFixed(1)} GB total (${s.disk.free_percent}% free)`;
+                    `${usedGb.toFixed(1)} GB used / ${s.disk.disk_total_gb.toFixed(1)} GB total (${s.disk.disk_free_percent}% free)`;
             }
         } catch (e) { console.error('Status load failed:', e); }
     }
