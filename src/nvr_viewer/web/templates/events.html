@@ -485,7 +485,7 @@
             const resp = await fetch('/api/events', {
                 method: 'DELETE',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify([...selectedIds]),
+                body: JSON.stringify({ids: [...selectedIds]}),
             });
             if (!resp.ok) throw new Error((await resp.json()).detail || resp.statusText);
             const result = await resp.json();

@@ -245,12 +245,12 @@ class TestEventsEndpoints:
 
     @pytest.mark.anyio
     async def test_delete_events_empty_list(self, client):
-        resp = await client.request("DELETE", "/api/events", json=[])
-        assert resp.status_code == 400
+        resp = await client.request("DELETE", "/api/events", json={"ids": []})
+        assert resp.status_code == 422  # Pydantic validation: min_length=1
 
     @pytest.mark.anyio
     async def test_delete_events_nonexistent(self, client):
-        resp = await client.request("DELETE", "/api/events", json=[99999])
+        resp = await client.request("DELETE", "/api/events", json={"ids": [99999]})
         assert resp.status_code == 200
         assert resp.json()["deleted"] == 0
 

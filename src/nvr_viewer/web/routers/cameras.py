@@ -2,8 +2,6 @@
 import asyncio
 import cv2
 import logging
-import numpy as np
-from io import BytesIO
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse, Response
@@ -70,7 +68,8 @@ async def add_camera(cam: CameraAdd):
 async def remove_camera(camera_id: int):
     key = str(camera_id)
     stop_stream(key)
-    db.delete_camera(camera_id)
+    if not db.delete_camera(camera_id):
+        raise HTTPException(404, "Camera not found")
     return {"message": "Camera deleted", "id": camera_id}
 
 

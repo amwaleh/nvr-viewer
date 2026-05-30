@@ -56,16 +56,16 @@ def _load_settings() -> dict:
                 defaults["camera_detection"] = saved["camera_detection"]
             if "storage_dir" in saved:
                 defaults["storage_dir"] = saved["storage_dir"]
-        except Exception:
-            pass
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to load settings: %s", e)
     else:
         old_file = CONFIG_DIR / "detection_settings.json"
         if old_file.exists():
             try:
                 with open(old_file, "r") as f:
                     defaults["detection"].update(json.load(f))
-            except Exception:
-                pass
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning("Failed to load legacy settings: %s", e)
     return defaults
 
 
@@ -96,8 +96,8 @@ def save_settings():
                 "camera_detection": camera_detection_settings,
                 "storage_dir": str(STORAGE_DIR),
             }, f, indent=2)
-    except Exception as e:
-        logger.warning(f"Failed to save settings: {e}")
+    except OSError as e:
+        logger.warning("Failed to save settings: %s", e)
 
 
 def cam_detection_enabled(camera_id: int, det_type: str) -> bool:
@@ -120,4 +120,4 @@ def update_storage_dir(new_dir: Path):
         d.mkdir(parents=True, exist_ok=True)
     event_processor = EventProcessor(db=db, snapshot_dir=SNAPSHOTS_DIR, clips_dir=CLIPS_DIR)
     save_settings()
-    logger.info(f"Storage directory updated: {STORAGE_DIR}")
+    logger.info("Storage directory updated: %s", STORAGE_DIR)

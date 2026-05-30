@@ -2,6 +2,7 @@
 import sqlite3
 import json
 import os
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -13,11 +14,12 @@ DB_PATH = Path.home() / ".nvr-viewer" / "nvr_viewer.db"
 
 
 class Database:
-    """SQLite database manager."""
+    """Thread-safe SQLite database manager."""
     
     def __init__(self, db_path: Path = DB_PATH):
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
         self._conn: Optional[sqlite3.Connection] = None
         self._init_db()
     
@@ -76,31 +78,32 @@ class Database:
     # Camera CRUD
     def add_camera(self, name: str, host: str, port: int = 554, path: str = "/onvif1",
                    camera_type: str = "rtsp", stream_url: str = "") -> int:
-        # Add type column if missing (migration)
-        try:
-            self._conn.execute("SELECT type FROM cameras LIMIT 1")
-        except sqlite3.OperationalError:
-            self._conn.execute("ALTER TABLE cameras ADD COLUMN type TEXT DEFAULT 'rtsp'")
-            self._conn.execute("ALTER TABLE cameras ADD COLUMN stream_url TEXT DEFAULT ''")
-            self._conn.commit()
+        with self._lock:
+            # Add type column if missing (migration)
+            try:
+                self._conn.execute("SELECT type FROM cameras LIMIT 1")
+            except sqlite3.OperationalError:
+                self._conn.execute("ALTER TABLE cameras ADD COLUMN type TEXT DEFAULT 'rtsp'")
+                self._conn.execute("ALTER TABLE cameras ADD COLUMN stream_url TEXT DEFAULT ''")
+                self._conn.commit()
 
-        cur = self._conn.execute(
-            """INSERT INTO cameras (name, host, port, path, type, stream_url, last_seen)
-               VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-               ON CONFLICT(host, port) DO UPDATE SET
-                   name = excluded.name,
-                   path = excluded.path,
-                   type = excluded.type,
-                   stream_url = excluded.stream_url,
-                   last_seen = datetime('now')""",
-            (name, host, port, path, camera_type, stream_url))
-        self._conn.commit()
-        if cur.lastrowid:
-            return cur.lastrowid
-        # ON CONFLICT UPDATE doesn't set lastrowid — fetch the existing id
-        row = self._conn.execute(
-            "SELECT id FROM cameras WHERE host = ? AND port = ?", (host, port)).fetchone()
-        return row["id"] if row else 0
+            cur = self._conn.execute(
+                """INSERT INTO cameras (name, host, port, path, type, stream_url, last_seen)
+                   VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                   ON CONFLICT(host, port) DO UPDATE SET
+                       name = excluded.name,
+                       path = excluded.path,
+                       type = excluded.type,
+                       stream_url = excluded.stream_url,
+                       last_seen = datetime('now')""",
+                (name, host, port, path, camera_type, stream_url))
+            self._conn.commit()
+            if cur.lastrowid:
+                return cur.lastrowid
+            # ON CONFLICT UPDATE doesn't set lastrowid — fetch the existing id
+            row = self._conn.execute(
+                "SELECT id FROM cameras WHERE host = ? AND port = ?", (host, port)).fetchone()
+            return row["id"] if row else 0
     
     def get_cameras(self) -> list[dict]:
         rows = self._conn.execute("SELECT * FROM cameras ORDER BY name").fetchall()
@@ -124,14 +127,16 @@ class Database:
         if not fields:
             return False
         values.append(camera_id)
-        self._conn.execute(f"UPDATE cameras SET {', '.join(fields)} WHERE id = ?", values)
-        self._conn.commit()
-        return self._conn.total_changes > 0
+        with self._lock:
+            self._conn.execute(f"UPDATE cameras SET {', '.join(fields)} WHERE id = ?", values)
+            self._conn.commit()
+            return self._conn.total_changes > 0
 
     def delete_camera(self, camera_id: int) -> bool:
-        self._conn.execute("DELETE FROM cameras WHERE id = ?", (camera_id,))
-        self._conn.commit()
-        return self._conn.total_changes > 0
+        with self._lock:
+            self._conn.execute("DELETE FROM cameras WHERE id = ?", (camera_id,))
+            self._conn.commit()
+            return self._conn.total_changes > 0
     
     # Detection events
     def log_detection(self, camera_id: int, detection_type: str, confidence: float = 0.0,
@@ -142,15 +147,16 @@ class Database:
             meta_str = json.dumps(metadata)
         else:
             meta_str = str(metadata) if metadata else None
-        cur = self._conn.execute(
-            """INSERT INTO detection_events 
-               (camera_id, timestamp, detection_type, confidence, label,
-                bbox_x, bbox_y, bbox_w, bbox_h, snapshot_path, metadata)
-               VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (camera_id, detection_type, confidence, label,
-             bbox_x, bbox_y, bbox_w, bbox_h, snapshot_path, meta_str))
-        self._conn.commit()
-        return cur.lastrowid
+        with self._lock:
+            cur = self._conn.execute(
+                """INSERT INTO detection_events 
+                   (camera_id, timestamp, detection_type, confidence, label,
+                    bbox_x, bbox_y, bbox_w, bbox_h, snapshot_path, metadata)
+                   VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (camera_id, detection_type, confidence, label,
+                 bbox_x, bbox_y, bbox_w, bbox_h, snapshot_path, meta_str))
+            self._conn.commit()
+            return cur.lastrowid
     
     def get_events(self, camera_id: int = None, detection_type: str = None,
                    since: str = None, limit: int = 100, offset: int = 0) -> list[dict]:
@@ -198,24 +204,27 @@ class Database:
         if not ids:
             return 0
         placeholders = ",".join("?" for _ in ids)
-        cur = self._conn.execute(
-            f"DELETE FROM detection_events WHERE id IN ({placeholders})", ids)
-        self._conn.commit()
-        return cur.rowcount
+        with self._lock:
+            cur = self._conn.execute(
+                f"DELETE FROM detection_events WHERE id IN ({placeholders})", ids)
+            self._conn.commit()
+            return cur.rowcount
     
     # Recordings
     def log_recording(self, camera_id: int, file_path: str, trigger: str = "manual") -> int:
-        cur = self._conn.execute(
-            "INSERT INTO recordings (camera_id, start_time, file_path, trigger) VALUES (?, datetime('now'), ?, ?)",
-            (camera_id, file_path, trigger))
-        self._conn.commit()
-        return cur.lastrowid
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO recordings (camera_id, start_time, file_path, trigger) VALUES (?, datetime('now'), ?, ?)",
+                (camera_id, file_path, trigger))
+            self._conn.commit()
+            return cur.lastrowid
     
     def end_recording(self, recording_id: int, file_size: int = 0):
-        self._conn.execute(
-            "UPDATE recordings SET end_time = datetime('now'), file_size = ? WHERE id = ?",
-            (file_size, recording_id))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "UPDATE recordings SET end_time = datetime('now'), file_size = ? WHERE id = ?",
+                (file_size, recording_id))
+            self._conn.commit()
     
     def close(self):
         if self._conn:

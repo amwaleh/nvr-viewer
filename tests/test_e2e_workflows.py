@@ -164,14 +164,14 @@ class TestEventsFlow:
 
         # 3. Attempt bulk delete of non-existent IDs
         resp = await client.request("DELETE", "/api/events",
-                                    json=[999998, 999999])
+                                    json={"ids": [999998, 999999]})
         assert resp.status_code == 200
         assert resp.json()["deleted"] == 0
         assert resp.json()["files_removed"] == 0
 
         # 4. Empty list should be rejected
-        resp = await client.request("DELETE", "/api/events", json=[])
-        assert resp.status_code == 400
+        resp = await client.request("DELETE", "/api/events", json={"ids": []})
+        assert resp.status_code == 422  # Pydantic validation: min_length=1
 
 
 class TestRecordingsFlow:

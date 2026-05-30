@@ -12,6 +12,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["system"])
 
 
+def _get_sd_access(cam: dict) -> SDCardAccess:
+    """Create SDCardAccess with credentials from the encrypted store."""
+    stored_cred = creds.get(cam["host"])
+    return SDCardAccess(
+        cam["host"],
+        username=stored_cred["username"] if stored_cred else "admin",
+        password=stored_cred["password"] if stored_cred else "",
+    )
+
+
+def _find_camera(camera_id: int) -> dict:
+    """Lookup camera by ID or raise 404."""
+    for c in db.get_cameras():
+        if c["id"] == camera_id:
+            return c
+    raise HTTPException(404, "Camera not found")
+
+
 @router.get("/status")
 async def system_status():
     """Get system status overview."""
@@ -54,17 +72,8 @@ async def scan_network(subnet: Optional[str] = None):
 @router.get("/sdcard/{camera_id}")
 async def list_sdcard_files(camera_id: int):
     """List files on the camera's SD card."""
-    cam = None
-    for c in db.get_cameras():
-        if c["id"] == camera_id:
-            cam = c
-            break
-    if not cam:
-        raise HTTPException(404, "Camera not found")
-
-    sd = SDCardAccess(cam["host"],
-                      username=creds.get(cam["host"])["username"] if creds.get(cam["host"]) else "admin",
-                      password=creds.get(cam["host"])["password"] if creds.get(cam["host"]) else "")
+    cam = _find_camera(camera_id)
+    sd = _get_sd_access(cam)
     try:
         files = sd.list_files()
         if not files:
@@ -76,29 +85,22 @@ async def list_sdcard_files(camera_id: int):
                 "supported": False,
             }
         return {"camera": cam["name"], "host": cam["host"], "files": files, "supported": True}
-    except Exception as e:
-        raise HTTPException(500, f"SD card access failed: {e}")
+    except Exception:
+        logger.exception("SD card list failed for camera %s", camera_id)
+        raise HTTPException(500, "SD card access failed")
 
 
 @router.post("/sdcard/{camera_id}/download")
 async def download_sdcard_file(camera_id: int,
                                remote_path: str = Query(...)):
     """Download a file from the camera's SD card."""
-    cam = None
-    for c in db.get_cameras():
-        if c["id"] == camera_id:
-            cam = c
-            break
-    if not cam:
-        raise HTTPException(404, "Camera not found")
-
-    sd = SDCardAccess(cam["host"],
-                      username=creds.get(cam["host"])["username"] if creds.get(cam["host"]) else "admin",
-                      password=creds.get(cam["host"])["password"] if creds.get(cam["host"]) else "")
+    cam = _find_camera(camera_id)
+    sd = _get_sd_access(cam)
     try:
         local_name = remote_path.replace("/", "_").replace("\\", "_")
         local_path = str(RECORDINGS_DIR / f"sdcard_{cam['host']}_{local_name}")
         sd.download_file(remote_path, local_path)
         return {"message": "File downloaded", "local_path": local_path}
-    except Exception as e:
-        raise HTTPException(500, f"Download failed: {e}")
+    except Exception:
+        logger.exception("SD card download failed for camera %s", camera_id)
+        raise HTTPException(500, "Download failed")

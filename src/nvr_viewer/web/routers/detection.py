@@ -37,7 +37,7 @@ async def set_detection_settings(toggle: DetectionToggle):
     if toggle.faces is not None:
         detection_settings["faces"] = toggle.faces
     save_settings()
-    logger.info(f"Default detection settings updated: {detection_settings}")
+    logger.info("Default detection settings updated: %s", detection_settings)
     return {"message": "Detection settings updated",
             "default": detection_settings,
             "cameras": camera_detection_settings}
@@ -70,7 +70,7 @@ async def set_camera_detection(camera_id: int, toggle: DetectionToggle):
     if toggle.faces is not None:
         camera_detection_settings[cam_key]["faces"] = toggle.faces
     save_settings()
-    logger.info(f"Camera {camera_id} detection: {camera_detection_settings[cam_key]}")
+    logger.info("Camera %d detection: %s", camera_id, camera_detection_settings[cam_key])
     return {"message": f"Camera {camera_id} detection updated",
             "settings": camera_detection_settings[cam_key]}
 
