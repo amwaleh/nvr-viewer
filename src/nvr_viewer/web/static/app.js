@@ -334,6 +334,7 @@ class NVRApp {
             const motionOn = camDet.motion ?? defDet.motion ?? true;
             const objectsOn = camDet.objects ?? defDet.objects ?? true;
             const facesOn = camDet.faces ?? defDet.faces ?? true;
+            const isCustom = String(camera.id) in (this._cameraDetectionSettings || {});
 
             return `
                 <article class="camera-card" data-camera-card="${camera.id}" draggable="true" data-drag-id="${camera.id}">
