@@ -359,6 +359,8 @@ class NVRApp {
                             ${enabled ? `<button class="btn-ghost focus-btn" type="button" onclick="window._openCameraFocus(${camera.id},'${escapeHtml(camera.name).replace(/'/g, "\\'")}')" title="Enlarge">
                                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4"/></svg>
                             </button>` : ''}
+                            <button class="icon-btn" type="button" data-action="edit-camera" data-id="${camera.id}" title="Edit" style="opacity:.5;font-size:13px;">✎</button>
+                            <button class="icon-btn" type="button" data-action="delete-camera" data-id="${camera.id}" title="Delete" style="opacity:.5;color:#e74c3c;font-size:13px;">🗑</button>
                         </div>
                     </div>
                     ${enabled
@@ -444,53 +446,8 @@ class NVRApp {
     renderCameraList() {
         const container = document.getElementById('camera-list');
         if (!container) return;
-
-        if (!this.cameras.length) {
-            container.innerHTML = '<div class="empty-inline">No cameras available.</div>';
-            return;
-        }
-
-        container.innerHTML = this.cameras.map((camera) => {
-            const state = this.getCameraState(camera);
-            const enabled = this.feedState.get(camera.id) !== false;
-
-            const camType = camera.type || 'rtsp';
-            const typeBadge = camType === 'mjpeg'
-                ? '<span style="background:#e67e22;color:#fff;font-size:.65rem;padding:1px 5px;border-radius:3px;margin-left:6px;">MJPEG</span>'
-                : '<span style="background:#2980b9;color:#fff;font-size:.65rem;padding:1px 5px;border-radius:3px;margin-left:6px;">RTSP</span>';
-            const hostInfo = camType === 'mjpeg'
-                ? escapeHtml(camera.stream_url || `${camera.host}:${camera.port}`)
-                : `${escapeHtml(camera.host)}:${escapeHtml(camera.port)}${escapeHtml(camera.path)}`;
-
-            const camDetection = this._cameraDetectionSettings || {};
-            const camDet = camDetection[String(camera.id)] || {};
-            const defDet = this._defaultDetection || detection_defaults();
-            const motionOn = camDet.motion ?? defDet.motion ?? true;
-            const objectsOn = camDet.objects ?? defDet.objects ?? true;
-            const facesOn = camDet.faces ?? defDet.faces ?? true;
-            const isCustom = String(camera.id) in camDetection;
-
-            return `
-                <div class="list-card" data-camera-list-item="${camera.id}">
-                    <div class="list-card-row" style="align-items:center;">
-                        <div class="list-card-meta" style="flex:1;min-width:0;">
-                            <strong style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${escapeHtml(camera.name)}${typeBadge}
-                                <span class="status-badge ${this.getStatusClass(state.status)}" data-role="status-badge" style="font-size:.65rem;padding:1px 6px;">${escapeHtml(state.status)}</span>
-                            </strong>
-                            <small style="opacity:.6;">${hostInfo}</small>
-                        </div>
-                        <div style="display:flex;align-items:center;gap:4px;">
-                            ${enabled
-                                ? `<button class="icon-btn" type="button" data-action="disconnect-camera" data-id="${camera.id}" data-role="stream-toggle-button" title="Stop stream" style="color:#f87171;"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg></button>`
-                                : `<button class="icon-btn" type="button" data-action="connect-camera" data-id="${camera.id}" data-role="stream-toggle-button" title="Start stream" style="color:#4ade80;"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg></button>`
-                            }
-                            <button class="icon-btn" type="button" data-action="edit-camera" data-id="${camera.id}" title="Edit" style="opacity:.5;font-size:13px;">✎</button>
-                            <button class="icon-btn" type="button" data-action="delete-camera" data-id="${camera.id}" title="Delete" style="opacity:.5;color:#e74c3c;font-size:13px;">🗑</button>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
+        // Camera list tab only shows the Add Camera button; all management is on the cards
+        container.innerHTML = '';
     }
 
     renderRecordings(files) {
