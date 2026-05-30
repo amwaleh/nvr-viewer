@@ -327,7 +327,6 @@ class NVRApp {
         const cards = visibleCameras.map((camera) => {
             const state = this.getCameraState(camera);
             const enabled = this.feedState.get(camera.id) !== false;
-            const streamAction = enabled ? 'stop-feed' : 'start-feed';
 
             // Per-camera detection indicators
             const camDet = (this._cameraDetectionSettings || {})[String(camera.id)] || {};
@@ -362,8 +361,9 @@ class NVRApp {
                     </div>
                     ${enabled
                         ? `<img class="feed-frame" src="/api/stream/${camera.id}" alt="Live stream for ${escapeHtml(camera.name)}" onclick="window._openCameraFocus(${camera.id},'${escapeHtml(camera.name).replace(/'/g, "\\'")}')" style="cursor:pointer;" title="Click to enlarge">`
-                        : `<div class="feed-placeholder">Stream is stopped for ${escapeHtml(camera.name)}.<br>Use Start or Connect to resume.</div>`}
+                        : `<div class="feed-placeholder">Stream is stopped for ${escapeHtml(camera.name)}.<br>Click Start Stream below to begin.</div>`}
                     <div class="camera-card-footer">
+                        ${enabled ? `
                         <div class="camera-meta">
                             <strong data-role="frame-count">${state.frameCount.toLocaleString()} frames</strong>
                             <span data-role="recording-label">${state.recording ? '● REC' : 'Idle'}</span>
@@ -375,12 +375,18 @@ class NVRApp {
                             <button class="icon-btn" type="button" data-action="snapshot-camera" data-id="${camera.id}" title="Take snapshot">
                                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="14" height="11" rx="2"/><circle cx="8" cy="9" r="3"/><path d="M5 3l1-2h4l1 2"/></svg>
                             </button>
-                            <button class="icon-btn" type="button" data-action="${streamAction}" data-id="${camera.id}" data-role="stream-button" title="${enabled ? 'Stop stream' : 'Start stream'}">
-                                ${enabled
-                                    ? '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>'
-                                    : '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg>'}
+                            <button class="icon-btn" type="button" data-action="stop-feed" data-id="${camera.id}" data-role="stream-button" title="Stop stream" style="color:#f87171;">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
                             </button>
                         </div>
+                        ` : `
+                        <div class="camera-meta" style="flex:1;">
+                            <span style="color:var(--text-muted);font-size:0.85rem;">Stream stopped</span>
+                        </div>
+                        <button class="btn" type="button" data-action="start-feed" data-id="${camera.id}" data-role="stream-button" style="min-height:36px;padding:0.4rem 1rem;font-size:0.85rem;flex-direction:row;gap:0.4rem;">
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg> Start Stream
+                        </button>
+                        `}
                     </div>
                 </article>
             `;
