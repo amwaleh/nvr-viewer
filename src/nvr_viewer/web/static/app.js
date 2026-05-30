@@ -471,12 +471,12 @@ class NVRApp {
                         </div>
                         <span class="status-badge ${this.getStatusClass(state.status)}" data-role="status-badge">${escapeHtml(state.status)}</span>
                     </div>
-                    <div class="action-row">
-                        <button class="btn" type="button" data-action="connect-camera" data-id="${camera.id}" data-role="connect-button" ${enabled ? 'disabled' : ''}>Connect</button>
-                        <button class="btn-secondary" type="button" data-action="disconnect-camera" data-id="${camera.id}" data-role="disconnect-button" ${enabled ? '' : 'disabled'}>Disconnect</button>
-                    </div>
-                    <div class="cam-detection-row">
-                        <label class="cam-det-toggle" title="Motion detection">
+                    <div class="action-row" style="align-items:center;gap:6px;">
+                        ${enabled
+                            ? `<button class="btn-danger" type="button" data-action="disconnect-camera" data-id="${camera.id}" data-role="stream-toggle-button" style="min-height:32px;padding:0.3rem 0.7rem;font-size:0.8rem;">⏹ Stop</button>`
+                            : `<button class="btn" type="button" data-action="connect-camera" data-id="${camera.id}" data-role="stream-toggle-button" style="min-height:32px;padding:0.3rem 0.7rem;font-size:0.8rem;">▶ Start</button>`
+                        }
+                        <label class="cam-det-toggle" title="Motion detection" style="margin-left:auto;">
                             <input type="checkbox" ${motionOn ? 'checked' : ''} onchange="window._nvrApp.saveCameraDetection(${camera.id},'motion',this.checked)">
                             <span>🏃</span>
                         </label>
