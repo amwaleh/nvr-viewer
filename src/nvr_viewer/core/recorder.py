@@ -51,7 +51,7 @@ class Recorder:
             self._file_path = str(self.output_dir / f"{safe_name}_{ts}.mp4")
 
             self._container = av.open(self._file_path, mode="w",
-                                      options={"movflags": "faststart"})
+                                      options={"movflags": "frag_keyframe+empty_moov+default_base_moof"})
             self._stream = self._container.add_stream("libx264", rate=int(self.fps))
             if width and height:
                 self._stream.width = width
