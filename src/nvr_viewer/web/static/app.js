@@ -338,41 +338,29 @@ class NVRApp {
 
             return `
                 <article class="camera-card" data-camera-card="${camera.id}" draggable="true" data-drag-id="${camera.id}">
-                    <div class="camera-card-header">
-                        <div style="display:flex;align-items:center;gap:10px;">
-                            <span class="drag-handle" title="Drag to reorder">
-                                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="4" cy="2" r="1.5"/><circle cx="10" cy="2" r="1.5"/><circle cx="4" cy="7" r="1.5"/><circle cx="10" cy="7" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="10" cy="12" r="1.5"/></svg>
-                            </span>
-                            <div class="camera-meta">
-                                <strong>${escapeHtml(camera.name)}</strong>
-                                <span>${escapeHtml(camera.host)}:${escapeHtml(camera.port)}${escapeHtml(camera.path)}</span>
-                            </div>
+                    <div class="camera-card-header" style="display:flex;align-items:center;gap:8px;">
+                        <span class="drag-handle" title="Drag to reorder">
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="4" cy="2" r="1.5"/><circle cx="10" cy="2" r="1.5"/><circle cx="4" cy="7" r="1.5"/><circle cx="10" cy="7" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="10" cy="12" r="1.5"/></svg>
+                        </span>
+                        <span style="width:8px;height:8px;border-radius:50%;background:${enabled ? '#4ade80' : '#f87171'};flex-shrink:0;" title="${enabled ? 'Streaming' : 'Stopped'}"></span>
+                        <strong style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(camera.host)}:${escapeHtml(camera.port)}${escapeHtml(camera.path)}">${escapeHtml(camera.name)}</strong>
+                        <div class="det-indicators" title="Click to toggle detections" style="gap:3px;margin:0 auto;">
+                            <span class="det-ind ${motionOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'motion',${!motionOn})" title="Motion: click to toggle">🏃</span>
+                            <span class="det-ind ${objectsOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'objects',${!objectsOn})" title="Objects: click to toggle">🚗</span>
+                            <span class="det-ind ${facesOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'faces',${!facesOn})" title="Faces: click to toggle">😶</span>
+                            ${isCustom ? `<span style="font-size:.6rem;opacity:.4;cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.resetCameraDetection(${camera.id})" title="Reset to defaults">↺</span>` : ''}
                         </div>
-                        <div style="display:flex;align-items:center;gap:6px;">
-                            <div class="det-indicators" title="Click to toggle detections" style="gap:3px;">
-                                <span class="det-ind ${motionOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'motion',${!motionOn})" title="Motion: click to toggle">🏃</span>
-                                <span class="det-ind ${objectsOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'objects',${!objectsOn})" title="Objects: click to toggle">🚗</span>
-                                <span class="det-ind ${facesOn ? 'on' : 'off'}" style="cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.saveCameraDetection(${camera.id},'faces',${!facesOn})" title="Faces: click to toggle">😶</span>
-                                ${isCustom ? `<span style="font-size:.6rem;opacity:.4;cursor:pointer;" onclick="event.stopPropagation();window._nvrApp.resetCameraDetection(${camera.id})" title="Reset to defaults">↺</span>` : ''}
-                            </div>
-                            <span class="status-badge ${this.getStatusClass(state.status)}" data-role="status-badge">${escapeHtml(state.status)}</span>
-                            ${enabled ? `<button class="btn-ghost focus-btn" type="button" onclick="window._openCameraFocus(${camera.id},'${escapeHtml(camera.name).replace(/'/g, "\\'")}')" title="Enlarge">
-                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4"/></svg>
-                            </button>` : ''}
-                            <button class="icon-btn" type="button" data-action="edit-camera" data-id="${camera.id}" title="Edit" style="opacity:.5;font-size:13px;">✎</button>
-                            <button class="icon-btn" type="button" data-action="delete-camera" data-id="${camera.id}" title="Delete" style="opacity:.5;color:#e74c3c;font-size:13px;">🗑</button>
-                        </div>
+                        ${enabled ? `<button class="btn-ghost focus-btn" type="button" onclick="window._openCameraFocus(${camera.id},'${escapeHtml(camera.name).replace(/'/g, "\\'")}')" title="Enlarge" style="flex-shrink:0;">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4"/></svg>
+                        </button>` : ''}
                     </div>
                     ${enabled
                         ? `<img class="feed-frame" src="/api/stream/${camera.id}" alt="Live stream for ${escapeHtml(camera.name)}" onclick="window._openCameraFocus(${camera.id},'${escapeHtml(camera.name).replace(/'/g, "\\'")}')" style="cursor:pointer;" title="Click to enlarge">`
                         : `<div class="feed-placeholder">Stream is stopped for ${escapeHtml(camera.name)}.<br>Click Start Stream below to begin.</div>`}
-                    <div class="camera-card-footer">
-                        ${enabled ? `
-                        <div class="camera-meta">
-                            <strong data-role="frame-count">${state.frameCount.toLocaleString()} frames</strong>
-                            <span data-role="recording-label">${state.recording ? '● REC' : 'Idle'}</span>
-                        </div>
-                        <div class="camera-actions">
+                    <div class="camera-card-footer" style="display:flex;align-items:center;">
+                        <div style="flex:1;"></div>
+                        <div class="camera-actions" style="display:flex;align-items:center;gap:6px;">
+                            ${enabled ? `
                             <button class="${state.recording ? 'icon-btn recording' : 'icon-btn'}" type="button" data-action="toggle-recording" data-id="${camera.id}" data-role="record-button" title="${state.recording ? 'Stop recording' : 'Start recording'}">
                                 <svg width="16" height="16" viewBox="0 0 16 16" fill="${state.recording ? '#ef4444' : 'currentColor'}"><circle cx="8" cy="8" r="6"/></svg>
                             </button>
@@ -382,15 +370,16 @@ class NVRApp {
                             <button class="icon-btn" type="button" data-action="stop-feed" data-id="${camera.id}" data-role="stream-button" title="Stop stream" style="color:#f87171;">
                                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
                             </button>
+                            ` : `
+                            <button class="icon-btn" type="button" data-action="start-feed" data-id="${camera.id}" data-role="stream-button" title="Start stream" style="color:#4ade80;">
+                                <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg>
+                            </button>
+                            `}
                         </div>
-                        ` : `
-                        <div class="camera-meta" style="flex:1;">
-                            <span style="color:var(--text-muted);font-size:0.85rem;">Stream stopped</span>
+                        <div style="flex:1;display:flex;justify-content:flex-end;gap:4px;">
+                            <button class="icon-btn" type="button" data-action="edit-camera" data-id="${camera.id}" title="Edit" style="opacity:.5;font-size:13px;">✎</button>
+                            <button class="icon-btn" type="button" data-action="delete-camera" data-id="${camera.id}" title="Delete" style="opacity:.5;color:#e74c3c;font-size:13px;">🗑</button>
                         </div>
-                        <button class="btn" type="button" data-action="start-feed" data-id="${camera.id}" data-role="stream-button" style="min-height:36px;padding:0.4rem 1rem;font-size:0.85rem;flex-direction:row;gap:0.4rem;background:#22c55e;color:#fff;">
-                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z"/></svg> Start Stream
-                        </button>
-                        `}
                     </div>
                 </article>
             `;
