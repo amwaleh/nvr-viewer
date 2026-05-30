@@ -21,7 +21,7 @@ Network Video Recorder with camera auto-detection, recording, and AI-powered det
 
 ```powershell
 # Install
-git clone https://github.com/alexmwaleh/nvr-viewer.git
+git clone https://github.com/amwaleh/nvr-viewer.git
 cd nvr-viewer
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 
@@ -29,23 +29,52 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1
 .\.venv\Scripts\activate
 ```
 
-### Web UI (Recommended)
+### API / Web UI (Recommended)
 
 ```powershell
-# Start the web interface
+# Start the web server
 nvr-viewer web --port 8080
 ```
 
-Open **http://localhost:8080** in your browser. From the web UI you can:
+Open **http://localhost:8080** in your browser.
+
+**Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/cameras` | List all cameras |
+| `POST` | `/api/cameras` | Add a camera |
+| `PUT` | `/api/cameras/{id}` | Update a camera |
+| `DELETE` | `/api/cameras/{id}` | Delete a camera |
+| `POST` | `/api/stream/{id}/start` | Start a camera stream |
+| `POST` | `/api/stream/{id}/stop` | Stop a camera stream |
+| `GET` | `/api/stream/{id}` | MJPEG stream feed |
+| `GET` | `/api/snapshot/{id}` | Capture a snapshot |
+| `POST` | `/api/record/{id}/start` | Start recording |
+| `POST` | `/api/record/{id}/stop` | Stop recording |
+| `GET` | `/api/recordings` | List recordings |
+| `GET` | `/api/recordings/{file}` | Stream a recording |
+| `DELETE` | `/api/recordings/{file}` | Delete a recording |
+| `GET` | `/api/events` | List detection events |
+| `DELETE` | `/api/events` | Delete events by IDs |
+| `GET` | `/api/scan` | Scan network for cameras |
+| `GET` | `/api/status` | System status |
+| `GET/POST` | `/api/detection` | Global detection settings |
+| `GET/POST/DELETE` | `/api/detection/{id}` | Per-camera detection |
+| `GET/POST` | `/api/credentials` | Credential management |
+| `GET/POST` | `/api/settings/storage` | Storage directory config |
+
+**Web UI features:**
 
 - **Scan** your network for cameras (RTSP + MJPEG auto-detection)
-- **Add/delete** cameras manually
+- **Add/edit/delete** cameras manually
 - **Live view** all camera streams in a grid
 - **Toggle detection** (Motion, Objects, Faces) per camera
-- **Browse events** in the paginated gallery at **http://localhost:8080/events**
+- **Record** streams to MP4 with in-browser playback
+- **Browse events** in the paginated gallery at `/events`
 - **View clips** — 10-second detection videos with bounding boxes
 
-### CLI (Advanced)
+### CLI
 
 ```powershell
 # Scan for cameras
@@ -98,11 +127,21 @@ src/nvr_viewer/
 │   ├── detector.py     # YOLO object + face detection
 │   └── events.py       # Event processing, clip recording, deduplication
 ├── storage/
-│   ├── database.py     # SQLite database
-│   ├── credentials.py  # Encrypted credential store
+│   ├── database.py     # Thread-safe SQLite database
+│   ├── credentials.py  # Fernet-encrypted credential store
 │   └── models.py       # Data models
 ├── web/
-│   ├── api.py          # FastAPI backend (streaming, detection, camera CRUD)
+│   ├── api.py          # FastAPI app orchestrator (CORS, static, router includes)
+│   ├── state.py        # Centralized mutable state (db, creds, streams, settings)
+│   ├── streaming.py    # RTSP + MJPEG stream workers with detection
+│   ├── server.py       # Uvicorn server launcher
+│   ├── routers/
+│   │   ├── cameras.py  # Camera CRUD, streaming, snapshots, recording
+│   │   ├── recordings.py # Recording file list/stream/download/delete
+│   │   ├── events.py   # Detection events + snapshot/clip serving
+│   │   ├── detection.py # Global and per-camera detection settings
+│   │   ├── settings.py # Storage dir + credential management
+│   │   └── system.py   # Status, network scan, SD card access
 │   ├── static/app.js   # Frontend SPA JavaScript
 │   └── templates/      # HTML templates (index.html, events.html)
 └── ui/
@@ -113,6 +152,27 @@ src/nvr_viewer/
 
 - Python 3.10+
 - Windows 10/11 (tested), Linux (should work)
+
+## Development
+
+```powershell
+# Install with dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest tests/ -v
+
+# Lint
+ruff check src/ tests/
+```
+
+## Testing
+
+77 tests covering:
+- **Route inventory** — all API endpoints exist and respond
+- **CRUD operations** — cameras, credentials, detection settings, storage
+- **E2E workflows** — full camera lifecycle, events flow, recording lifecycle
+- **Security** — path traversal protection, credential encryption, input validation
 
 ## Camera Compatibility
 
