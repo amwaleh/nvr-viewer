@@ -49,6 +49,22 @@
         }
         .toggle input:checked + .slider { background: #2ecc71; }
         .toggle input:checked + .slider::after { transform: translateX(1.375rem); background: #fff; }
+        details.settings-section > summary {
+            cursor: pointer;
+            list-style: none;
+            user-select: none;
+        }
+        details.settings-section > summary::-webkit-details-marker { display: none; }
+        details.settings-section > summary::before {
+            content: '▸';
+            display: inline-block;
+            margin-right: 0.5rem;
+            transition: transform 0.2s;
+            font-size: 0.85em;
+        }
+        details.settings-section[open] > summary::before {
+            transform: rotate(90deg);
+        }
     </style>
 </head>
 <body class="min-h-screen bg-nvr-bg text-slate-100 antialiased">
@@ -95,8 +111,9 @@
         </section>
 
         <!-- Storage Settings -->
-        <section class="rounded-2xl border border-nvr-border bg-nvr-card/95 p-5 shadow-lg">
-            <h2 class="mb-4 text-lg font-semibold text-white">Storage</h2>
+        <details class="settings-section rounded-2xl border border-nvr-border bg-nvr-card/95 shadow-lg" open>
+            <summary class="p-5 text-lg font-semibold text-white">Storage</summary>
+            <div class="px-5 pb-5">
             <div class="grid gap-4 sm:grid-cols-2">
                 <div>
                     <label class="mb-1 block text-sm text-slate-400">Storage Directory</label>
@@ -125,18 +142,20 @@
                     <div id="disk-bar" class="h-full rounded-full bg-sky-500 transition-all" style="width:0%"></div>
                 </div>
             </div>
-        </section>
+            </div>
+        </details>
 
         <!-- Notification Settings -->
-        <section class="rounded-2xl border border-nvr-border bg-nvr-card/95 p-5 shadow-lg">
-            <div class="mb-4 flex items-center justify-between">
-                <h2 class="text-lg font-semibold text-white">Notifications</h2>
-                <label class="toggle" title="Enable notifications">
+        <details class="settings-section rounded-2xl border border-nvr-border bg-nvr-card/95 shadow-lg" open>
+            <summary class="flex items-center justify-between p-5">
+                <span class="text-lg font-semibold text-white">Notifications</span>
+                <label class="toggle" title="Enable notifications" onclick="event.stopPropagation()">
                     <input type="checkbox" id="notif-enabled" onchange="saveNotifications()">
                     <span class="slider"></span>
                 </label>
-            </div>
+            </summary>
 
+            <div class="px-5 pb-5">
             <div id="notif-settings" class="space-y-5">
                 <!-- Email -->
                 <fieldset class="rounded-xl border border-white/10 p-4">
@@ -275,25 +294,68 @@
                     </button>
                 </div>
             </div>
-        </section>
+            </div>
+        </details>
 
         <!-- Service / Daemon -->
-        <section class="rounded-2xl border border-nvr-border bg-nvr-card/95 p-5 shadow-lg">
-            <h2 class="mb-4 text-lg font-semibold text-white">Service / Daemon</h2>
-            <p class="mb-3 text-sm text-slate-400">Manage the NVR Viewer background service. Run these commands in a terminal on the server.</p>
-            <div class="space-y-2 rounded-xl bg-slate-950/50 p-4 font-mono text-sm text-slate-300">
-                <div><span class="text-slate-500"># Install as service</span></div>
-                <div class="text-sky-300">nvr-viewer service install --port 8080</div>
-                <div class="mt-2"><span class="text-slate-500"># Start / Stop / Status</span></div>
-                <div class="text-sky-300">nvr-viewer service start</div>
-                <div class="text-sky-300">nvr-viewer service stop</div>
-                <div class="text-sky-300">nvr-viewer service status</div>
-                <div class="mt-2"><span class="text-slate-500"># View logs</span></div>
-                <div class="text-sky-300">nvr-viewer service logs</div>
-                <div class="mt-2"><span class="text-slate-500"># Uninstall</span></div>
-                <div class="text-sky-300">nvr-viewer service uninstall</div>
+        <details class="settings-section rounded-2xl border border-nvr-border bg-nvr-card/95 shadow-lg" open>
+            <summary class="p-5 text-lg font-semibold text-white">Service / Daemon</summary>
+            <div class="px-5 pb-5">
+            <p class="mb-3 text-sm text-slate-400">Manage the NVR Viewer background service from here or via the terminal.</p>
+
+            <!-- Status -->
+            <div class="mb-4 flex items-center gap-3">
+                <span class="text-sm text-slate-400">Status:</span>
+                <span id="svc-status-badge" class="rounded-full bg-slate-700 px-3 py-1 text-xs font-medium text-slate-300">Checking…</span>
+                <button onclick="svcAction('status')" class="ml-auto rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 transition hover:bg-white/10">Refresh</button>
             </div>
-        </section>
+
+            <!-- Action buttons -->
+            <div class="mb-4 flex flex-wrap gap-3">
+                <button onclick="svcAction('install')" class="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-500">
+                    Install Service
+                </button>
+                <button onclick="svcAction('start')" class="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-2.5 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/20">
+                    Start
+                </button>
+                <button onclick="svcAction('stop')" class="rounded-xl border border-amber-500/30 bg-amber-500/10 px-5 py-2.5 text-sm font-medium text-amber-300 transition hover:bg-amber-500/20">
+                    Stop
+                </button>
+                <button onclick="svcAction('logs')" class="rounded-xl border border-white/15 bg-white/5 px-5 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10">
+                    View Logs
+                </button>
+                <button onclick="svcAction('uninstall')" class="rounded-xl border border-red-500/30 bg-red-500/10 px-5 py-2.5 text-sm font-medium text-red-300 transition hover:bg-red-500/20">
+                    Uninstall
+                </button>
+            </div>
+
+            <!-- Output console -->
+            <div id="svc-output" class="hidden rounded-xl bg-slate-950/70 p-4">
+                <div class="mb-2 flex items-center justify-between">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Output</span>
+                    <button onclick="document.getElementById('svc-output').classList.add('hidden')" class="text-xs text-slate-500 hover:text-slate-300">✕</button>
+                </div>
+                <pre id="svc-output-text" class="max-h-64 overflow-y-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-slate-300"></pre>
+            </div>
+
+            <!-- CLI reference -->
+            <details class="mt-4">
+                <summary class="cursor-pointer text-sm text-slate-500 hover:text-slate-300">Terminal commands reference</summary>
+                <div class="mt-2 space-y-2 rounded-xl bg-slate-950/50 p-4 font-mono text-sm text-slate-300">
+                    <div><span class="text-slate-500"># Install as service</span></div>
+                    <div class="text-sky-300">nvr-viewer service install --port 8080</div>
+                    <div class="mt-2"><span class="text-slate-500"># Start / Stop / Status</span></div>
+                    <div class="text-sky-300">nvr-viewer service start</div>
+                    <div class="text-sky-300">nvr-viewer service stop</div>
+                    <div class="text-sky-300">nvr-viewer service status</div>
+                    <div class="mt-2"><span class="text-slate-500"># View logs</span></div>
+                    <div class="text-sky-300">nvr-viewer service logs</div>
+                    <div class="mt-2"><span class="text-slate-500"># Uninstall</span></div>
+                    <div class="text-sky-300">nvr-viewer service uninstall</div>
+                </div>
+            </details>
+            </div>
+        </details>
     </main>
 
     <footer class="border-t border-nvr-border px-4 py-4 text-center text-sm text-slate-500">
@@ -446,11 +508,50 @@
         } catch (e) { toast(e.message, 'error'); }
     }
 
+    // --- Service / Daemon ---
+    async function svcAction(action) {
+        const outEl = document.getElementById('svc-output');
+        const textEl = document.getElementById('svc-output-text');
+        const badge = document.getElementById('svc-status-badge');
+
+        outEl.classList.remove('hidden');
+        textEl.textContent = `Running ${action}…`;
+
+        try {
+            const method = (action === 'status' || action === 'logs') ? 'GET' : 'POST';
+            const path = `/api/service/${action}`;
+            const r = await api(method, path);
+            textEl.textContent = r.output || 'Done (no output)';
+
+            if (action === 'status') {
+                const text = (r.output || '').toLowerCase();
+                if (text.includes('running') || text.includes('active')) {
+                    badge.textContent = 'Running';
+                    badge.className = 'rounded-full bg-emerald-600/30 px-3 py-1 text-xs font-medium text-emerald-300';
+                } else if (text.includes('stopped') || text.includes('inactive') || text.includes('not found') || text.includes('not installed')) {
+                    badge.textContent = 'Stopped';
+                    badge.className = 'rounded-full bg-slate-700 px-3 py-1 text-xs font-medium text-slate-400';
+                } else {
+                    badge.textContent = 'Unknown';
+                    badge.className = 'rounded-full bg-amber-600/30 px-3 py-1 text-xs font-medium text-amber-300';
+                }
+            } else {
+                toast(`Service ${action} completed`, 'success');
+                // Refresh status after action
+                setTimeout(() => svcAction('status'), 1000);
+            }
+        } catch (e) {
+            textEl.textContent = `Error: ${e.message}`;
+            toast(e.message, 'error');
+        }
+    }
+
     // --- Init ---
     document.addEventListener('DOMContentLoaded', () => {
         loadStatus();
         loadStorage();
         loadNotifications();
+        svcAction('status');
     });
     </script>
 </body>
