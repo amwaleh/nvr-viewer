@@ -1,5 +1,6 @@
 """Stream recorder — saves H264 stream to MP4 files."""
 import av
+import cv2
 import numpy as np
 import logging
 import time
@@ -49,7 +50,8 @@ class Recorder:
             safe_name = self.camera_name.replace(" ", "_")
             self._file_path = str(self.output_dir / f"{safe_name}_{ts}.mp4")
 
-            self._container = av.open(self._file_path, mode="w")
+            self._container = av.open(self._file_path, mode="w",
+                                      options={"movflags": "faststart"})
             self._stream = self._container.add_stream("libx264", rate=int(self.fps))
             if width and height:
                 self._stream.width = width
@@ -69,13 +71,17 @@ class Recorder:
             if not self._recording or self._container is None:
                 return
 
-            # Initialize stream dimensions from first frame
+            # Initialize stream dimensions from first frame (even dims for libx264)
             h, w = frame.shape[:2]
             if self._stream.width == 0:
-                self._stream.width = w
-                self._stream.height = h
+                self._stream.width = w & ~1
+                self._stream.height = h & ~1
 
             try:
+                h, w = frame.shape[:2]
+                sw, sh = self._stream.width, self._stream.height
+                if w != sw or h != sh:
+                    frame = cv2.resize(frame, (sw, sh))
                 vf = av.VideoFrame.from_ndarray(frame, format="bgr24")
                 vf.pts = self._frame_count
                 for packet in self._stream.encode(vf):

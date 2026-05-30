@@ -318,6 +318,16 @@ def _mjpeg_stream_worker(camera_key: str, stream_url: str):
                 frame_skip += 1
                 stream_info["frame_count"] = stream_info.get("frame_count", 0) + 1
 
+                # Write to recorder if active
+                rec = stream_info.get("recorder")
+                if rec and rec.recording:
+                    decode_frame = cv2.imdecode(
+                        np.frombuffer(jpeg_bytes, dtype=np.uint8),
+                        cv2.IMREAD_COLOR
+                    )
+                    if decode_frame is not None:
+                        rec.write_frame(decode_frame)
+
                 # Store raw JPEG bytes for passthrough to browser (no re-encode!)
                 stream_info["latest_jpeg"] = jpeg_bytes
 
@@ -674,7 +684,7 @@ async def start_recording(camera_id: int):
             cam = c
             break
 
-    recorder = Recorder(cam["name"] if cam else f"cam_{camera_id}")
+    recorder = Recorder(cam["name"] if cam else f"cam_{camera_id}", output_dir=RECORDINGS_DIR)
     path = recorder.start()
     stream["recorder"] = recorder
 
@@ -720,12 +730,31 @@ async def list_recordings():
 
 
 @app.get("/api/recordings/{filename}")
+async def stream_recording(filename: str):
+    """Stream a recording file for in-browser playback."""
+    file_path = RECORDINGS_DIR / filename
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(404, "Recording not found")
+    return FileResponse(file_path, media_type="video/mp4")
+
+
+@app.get("/api/recordings/{filename}/download")
 async def download_recording(filename: str):
     """Download a recording file."""
     file_path = RECORDINGS_DIR / filename
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(404, "Recording not found")
     return FileResponse(file_path, media_type="video/mp4", filename=filename)
+
+
+@app.delete("/api/recordings/{filename}")
+async def delete_recording(filename: str):
+    """Delete a recording file."""
+    file_path = RECORDINGS_DIR / filename
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(404, "Recording not found")
+    file_path.unlink()
+    return {"message": f"Deleted {filename}"}
 
 
 # SD Card files

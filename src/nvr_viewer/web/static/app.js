@@ -26,12 +26,13 @@ class NVRApp {
         this.cameraPage = 0;
         this.camerasPerPage = 4;
         this.setupEventListeners();
+        // Load detection settings first so camera cards render with correct indicators
+        await this.loadDetectionSettings();
         await Promise.all([
             this.loadCameras(),
             this.loadRecordings(),
             this.loadEvents(),
             this.loadStatus(),
-            this.loadDetectionSettings(),
             this.loadStorageSettings(),
         ]);
         this.startStatusPolling();
@@ -501,12 +502,18 @@ class NVRApp {
 
         container.innerHTML = files.map((file) => `
             <div class="list-card">
-                <div class="list-card-row">
-                    <div class="list-card-meta">
-                        <strong>${escapeHtml(file.name)}</strong>
+                <div class="list-card-row" style="cursor:pointer;gap:10px;" onclick="this.parentElement.querySelector('.rec-player').toggleAttribute('hidden')">
+                    <div class="list-card-meta" style="min-width:0;flex:1;">
+                        <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">▶ ${escapeHtml(file.name)}</strong>
                         <small>${escapeHtml(file.modified)} · ${escapeHtml(file.size_mb != null ? `${file.size_mb} MB` : this.formatFileSize(file.size))}</small>
                     </div>
-                    <a class="btn" href="/api/recordings/${encodeURIComponent(file.name)}">Download</a>
+                    <a class="btn-ghost" href="/api/recordings/${encodeURIComponent(file.name)}/download" download title="Download" onclick="event.stopPropagation()" style="font-size:1.1rem;flex-shrink:0;">⬇</a>
+                    <button class="btn-ghost" type="button" data-action="delete-recording" data-name="${escapeHtml(file.name)}" title="Delete" onclick="event.stopPropagation()" style="font-size:1.1rem;flex-shrink:0;color:#e74c3c;">🗑</button>
+                </div>
+                <div class="rec-player" hidden style="padding:8px 0;">
+                    <video controls preload="none" style="width:100%;max-height:400px;border-radius:6px;background:#000;">
+                        <source src="/api/recordings/${encodeURIComponent(file.name)}" type="video/mp4">
+                    </video>
                 </div>
             </div>
         `).join('');
@@ -780,6 +787,17 @@ class NVRApp {
                 document.getElementById('edit-camera-dialog').style.display = 'none';
             } else if (action === 'save-storage-dir') {
                 await this.saveStorageDir();
+            } else if (action === 'delete-recording') {
+                const name = target.dataset.name;
+                if (confirm(`Delete recording "${name}"?`)) {
+                    try {
+                        await this.api('DELETE', `/api/recordings/${encodeURIComponent(name)}`);
+                        this.showToast('Recording deleted', 'success');
+                        await this.loadRecordings();
+                    } catch (e) {
+                        this.showToast(`Delete failed: ${e.message}`, 'error');
+                    }
+                }
             }
         });
     }
@@ -831,6 +849,13 @@ class NVRApp {
     async saveCameraDetection(cameraId, type, enabled) {
         try {
             await this.api('POST', `/api/detection/${cameraId}`, { [type]: enabled });
+            // Update local state and re-render so icons reflect the change
+            const camKey = String(cameraId);
+            if (!this._cameraDetectionSettings) this._cameraDetectionSettings = {};
+            if (!this._cameraDetectionSettings[camKey]) this._cameraDetectionSettings[camKey] = {};
+            this._cameraDetectionSettings[camKey][type] = enabled;
+            this.renderCameraGrid();
+            this.renderCameraList();
             this.showToast(`Camera ${cameraId} ${type} ${enabled ? 'enabled' : 'disabled'}`, 'info');
         } catch (e) {
             this.showToast(`Failed to update: ${e.message}`, 'error');
@@ -840,9 +865,12 @@ class NVRApp {
     async resetCameraDetection(cameraId) {
         try {
             await this.api('DELETE', `/api/detection/${cameraId}`);
+            // Remove local override so it falls back to defaults
+            const camKey = String(cameraId);
+            if (this._cameraDetectionSettings) delete this._cameraDetectionSettings[camKey];
+            this.renderCameraGrid();
+            this.renderCameraList();
             this.showToast(`Camera ${cameraId} reset to defaults`, 'info');
-            this.loadDetectionSettings();
-            this.loadCameras();
         } catch (e) {
             this.showToast(`Failed to reset: ${e.message}`, 'error');
         }
