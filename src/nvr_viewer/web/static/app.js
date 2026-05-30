@@ -502,13 +502,13 @@ class NVRApp {
 
         container.innerHTML = files.map((file) => `
             <div class="list-card">
-                <div class="list-card-row" style="cursor:pointer;gap:10px;" onclick="this.parentElement.querySelector('.rec-player').toggleAttribute('hidden')">
+                <div class="list-card-row" style="cursor:pointer;gap:10px;" onclick="if(!event.target.closest('[data-action],a')){this.parentElement.querySelector('.rec-player').toggleAttribute('hidden')}">
                     <div class="list-card-meta" style="min-width:0;flex:1;">
                         <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">▶ ${escapeHtml(file.name)}</strong>
                         <small>${escapeHtml(file.modified)} · ${escapeHtml(file.size_mb != null ? `${file.size_mb} MB` : this.formatFileSize(file.size))}</small>
                     </div>
-                    <a class="btn-ghost" href="/api/recordings/${encodeURIComponent(file.name)}/download" download title="Download" onclick="event.stopPropagation()" style="font-size:1.1rem;flex-shrink:0;">⬇</a>
-                    <button class="btn-ghost" type="button" data-action="delete-recording" data-name="${escapeHtml(file.name)}" title="Delete" onclick="event.stopPropagation()" style="font-size:1.1rem;flex-shrink:0;color:#e74c3c;">🗑</button>
+                    <a class="btn-ghost" href="/api/recordings/${encodeURIComponent(file.name)}/download" download title="Download" style="font-size:1.1rem;flex-shrink:0;">⬇</a>
+                    <button class="btn-ghost" type="button" data-action="delete-recording" data-name="${escapeHtml(file.name)}" title="Delete" style="font-size:1.1rem;flex-shrink:0;color:#e74c3c;">🗑</button>
                 </div>
                 <div class="rec-player" hidden style="padding:8px 0;">
                     <video controls preload="none" style="width:100%;max-height:400px;border-radius:6px;background:#000;">
