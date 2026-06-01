@@ -150,6 +150,9 @@ def _stream_worker(camera_key: str, config: CameraConfig):
         frames = decoder.decode(nal_data)
         for frame in frames:
             stream_info["latest_frame"] = frame
+            # Pre-encode JPEG once for all viewers (avoids per-request cv2.imencode)
+            _, _pre_jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+            stream_info["latest_jpeg"] = _pre_jpg.tobytes()
             stream_info["frame_count"] = stream_info.get("frame_count", 0) + 1
 
             rec = stream_info.get("recorder")
@@ -260,8 +263,8 @@ def _mjpeg_stream_worker(camera_key: str, stream_url: str):
 
                 stream_info["latest_jpeg"] = jpeg_bytes
 
-                run_detection = (frame_skip % 5 == 0)
-                if frame_skip % 3 == 0 or run_detection:
+                run_detection = (frame_skip % 10 == 0)
+                if frame_skip % 5 == 0 or run_detection:
                     frame = cv2.imdecode(
                         np.frombuffer(jpeg_bytes, dtype=np.uint8),
                         cv2.IMREAD_COLOR

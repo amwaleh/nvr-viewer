@@ -124,17 +124,16 @@ async def stream_camera(camera_id: int):
                 yield (b"--frame\r\n"
                        b"Content-Type: image/jpeg\r\n\r\n"
                        + jpeg_bytes + b"\r\n")
-            await asyncio.sleep(0.033)
+            await asyncio.sleep(0.066)
 
     async def rtsp_generator():
         while True:
-            frame = info.get("latest_frame")
-            if frame is not None:
-                _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            jpeg_bytes = info.get("latest_jpeg")
+            if jpeg_bytes:
                 yield (b"--frame\r\n"
                        b"Content-Type: image/jpeg\r\n\r\n"
-                       + jpeg.tobytes() + b"\r\n")
-            await asyncio.sleep(0.033)
+                       + jpeg_bytes + b"\r\n")
+            await asyncio.sleep(0.066)
 
     if info.get("latest_jpeg") is not None:
         gen = mjpeg_generator()
