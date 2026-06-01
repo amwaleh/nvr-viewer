@@ -248,6 +248,9 @@
             padding: 0 .125rem;
         }
     </style>
+<script>
+function apiUrl(path) { return (window.BASE_URL||'') + path; }
+</script>
 </head>
 <body class="dark min-h-screen bg-nvr-bg text-zinc-100 antialiased">
     <header class="sticky top-0 z-50 border-b border-nvr-border bg-black/85 backdrop-blur">
@@ -329,7 +332,7 @@
 
     async function loadCameras() {
         try {
-            cameras = await (await fetch('/api/cameras')).json();
+            cameras = await (await fetch((window.BASE_URL||'') + '/api/cameras')).json();
             const sel = document.getElementById('filter-camera');
             cameras.forEach(c => {
                 const opt = document.createElement('option');
@@ -350,12 +353,20 @@
         const type = document.getElementById('filter-type').value;
         const cameraId = document.getElementById('filter-camera').value;
 
-        let url = `/api/events?limit=${perPage}&offset=${offset}`;
+        let url = `${window.BASE_URL||''}/api/events?limit=${perPage}&offset=${offset}`;
         if (type) url += `&detection_type=${encodeURIComponent(type)}`;
         if (cameraId) url += `&camera_id=${cameraId}`;
 
         try {
             const resp = await (await fetch(url)).json();
+                // Prefix API URLs with BASE_URL for reverse proxy
+                const _base = window.BASE_URL || '';
+                if (_base && resp.events) {
+                    resp.events.forEach(ev => {
+                        if (ev.snapshot_url) ev.snapshot_url = _base + ev.snapshot_url;
+                        if (ev.clip_url) ev.clip_url = _base + ev.clip_url;
+                    });
+                }
             allEvents = resp.events || resp;
             totalEvents = resp.total || allEvents.length;
             renderGrid();
@@ -553,7 +564,7 @@
         if (!count) return;
         if (!confirm(`Delete ${count} event${count > 1 ? 's' : ''} and their files? This cannot be undone.`)) return;
         try {
-            const resp = await fetch('/api/events', {
+            const resp = await fetch((window.BASE_URL||'') + '/api/events', {
                 method: 'DELETE',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ids: [...selectedIds]}),

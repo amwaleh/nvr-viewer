@@ -721,7 +721,7 @@
         const feed = document.getElementById('camera-focus-feed');
         const nameEl = document.getElementById('camera-focus-name');
         nameEl.textContent = cameraName;
-        feed.src = '/api/stream/' + cameraId;
+        feed.src = (window.BASE_URL||'') + '/api/stream/' + cameraId;
         overlay.style.display = 'flex';
     };
     window._closeCameraFocus = function() {
