@@ -1,6 +1,6 @@
 // NVR Viewer Frontend Application
 
-const API = '';  // Same origin
+const API = (typeof window !== 'undefined' && window.BASE_URL) ? window.BASE_URL : '';  // Same origin, or subpath prefix
 
 const escapeHtml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -309,7 +309,7 @@ class NVRApp {
         // Stop streams for cameras NOT on the current page
         this.cameras.forEach(cam => {
             const isVisible = visibleCameras.some(v => v.id === cam.id);
-            const feedImg = document.querySelector(`img.feed-frame[src="/api/stream/${cam.id}"]`);
+            const feedImg = document.querySelector(`img.feed-frame[src="${API}/api/stream/${cam.id}"]`);
             if (!isVisible && feedImg) {
                 feedImg.src = '';  // Stop loading the stream
             }
@@ -357,7 +357,7 @@ class NVRApp {
                         </button>` : ''}
                     </div>
                     ${enabled
-                        ? `<img class="feed-frame" src="/api/stream/${camera.id}" alt="Live stream for ${escapeHtml(camera.name)}" onclick="window._openCameraFocus(${camera.id},'${escapeHtml(camera.name).replace(/'/g, "\\'")}')" style="cursor:pointer;" title="Click to enlarge">`
+                        ? `<img class="feed-frame" src="${API}/api/stream/${camera.id}" alt="Live stream for ${escapeHtml(camera.name)}" onclick="window._openCameraFocus(${camera.id},'${escapeHtml(camera.name).replace(/'/g, "\\'")}')" style="cursor:pointer;" title="Click to enlarge">`
                         : `<div class="feed-placeholder">Stream is stopped for ${escapeHtml(camera.name)}.<br>Click Start Stream below to begin.</div>`}
                     <div class="camera-card-footer" style="display:flex;align-items:center;">
                         <div style="flex:1;"></div>
@@ -457,12 +457,12 @@ class NVRApp {
                         <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">▶ ${escapeHtml(file.name)}</strong>
                         <small>${escapeHtml(file.modified)} · ${escapeHtml(file.size_mb != null ? `${file.size_mb} MB` : this.formatFileSize(file.size))}</small>
                     </div>
-                    <a class="btn-ghost" href="/api/recordings/${encodeURIComponent(file.name)}/download" download title="Download" style="font-size:1.1rem;flex-shrink:0;">⬇</a>
+                    <a class="btn-ghost" href="${API}/api/recordings/${encodeURIComponent(file.name)}/download" download title="Download" style="font-size:1.1rem;flex-shrink:0;">⬇</a>
                     <button class="btn-ghost" type="button" data-action="delete-recording" data-name="${escapeHtml(file.name)}" title="Delete" style="font-size:1.1rem;flex-shrink:0;color:#e74c3c;">🗑</button>
                 </div>
                 <div class="rec-player" hidden style="padding:8px 0;">
                     <video controls preload="none" style="width:100%;max-height:400px;border-radius:6px;background:#000;">
-                        <source src="/api/recordings/${encodeURIComponent(file.name)}" type="video/mp4">
+                        <source src="${API}/api/recordings/${encodeURIComponent(file.name)}" type="video/mp4">
                     </video>
                 </div>
             </div>
@@ -536,7 +536,7 @@ class NVRApp {
             <div class="events-summary">
                 <div class="events-summary-total">${events.length} recent events</div>
                 <div class="events-summary-badges">${badges}</div>
-                <a href="/events" target="_blank" class="btn-primary events-gallery-btn">View Events Gallery ↗</a>
+                <a href="${API}/events" target="_blank" class="btn-primary events-gallery-btn">View Events Gallery ↗</a>
             </div>`;
     }
 

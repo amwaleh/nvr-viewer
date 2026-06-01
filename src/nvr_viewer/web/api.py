@@ -4,13 +4,35 @@ Thin orchestrator: sets up the app, CORS, static files, frontend pages,
 and includes all API routers. Business logic lives in routers/ and streaming.py.
 """
 import logging
+import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+
+# Base URL prefix when served behind a reverse-proxy subpath.
+# E.g. NVR_ROOT_PATH=/cctv when nginx proxies /cctv/ → this app.
+ROOT_PATH = os.environ.get("NVR_ROOT_PATH", "").rstrip("/")
+
+
+def _serve_html(path: Path) -> HTMLResponse:
+    """Read an HTML file, inject BASE_URL shim, and return HTMLResponse."""
+    html = path.read_text(encoding="utf-8")
+    if ROOT_PATH:
+        # Rewrite absolute hrefs/srcs that point to app-internal pages.
+        for page in ("/events", "/settings", "/timeline", "/docs", "/"):
+            html = html.replace(f'href="{page}"', f'href="{ROOT_PATH}{page}"')
+            html = html.replace(f"href='{page}'", f"href='{ROOT_PATH}{page}'")
+        # Fix the module script tag
+        html = html.replace('src="/static/', f'src="{ROOT_PATH}/static/')
+    # Inject BASE_URL so JS fetch calls and dynamic hrefs use correct prefix.
+    shim = f'<script>window.BASE_URL={repr(ROOT_PATH)};</script>\n'
+    html = html.replace("</head>", shim + "</head>", 1)
+    return HTMLResponse(content=html)
 
 from .routers import cameras, recordings, events, detection, settings, system, notifications, service, timeline
 from .state import db, creds, continuous_recording_settings, active_streams
@@ -90,7 +112,7 @@ async def index():
     """Serve the main frontend page."""
     index_path = TEMPLATES_DIR / "index.html"
     if index_path.exists():
-        return FileResponse(index_path, media_type="text/html")
+        return _serve_html(index_path)
     return {"message": "NVR Viewer API", "docs": "/docs"}
 
 
@@ -99,7 +121,7 @@ async def events_page():
     """Serve the events gallery page."""
     events_path = TEMPLATES_DIR / "events.html"
     if events_path.exists():
-        return FileResponse(events_path, media_type="text/html")
+        return _serve_html(events_path)
     raise HTTPException(404, "Events page not found")
 
 
@@ -108,7 +130,7 @@ async def settings_page():
     """Serve the settings configuration page."""
     settings_path = TEMPLATES_DIR / "settings.html"
     if settings_path.exists():
-        return FileResponse(settings_path, media_type="text/html")
+        return _serve_html(settings_path)
     raise HTTPException(404, "Settings page not found")
 
 
@@ -117,7 +139,7 @@ async def timeline_page():
     """Serve the timeline playback page."""
     timeline_path = TEMPLATES_DIR / "timeline.html"
     if timeline_path.exists():
-        return FileResponse(timeline_path, media_type="text/html")
+        return _serve_html(timeline_path)
     raise HTTPException(404, "Timeline page not found")
 
 
